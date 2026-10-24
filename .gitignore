@@ -1,0 +1,128 @@
+# ==========================================
+# Xcode & Swift Build Artifacts
+# ==========================================
+build/
+DerivedData/
+*.app/
+*.dSYM/
+*.ipa
+*.pkg
+*.dylib
+*.o
+*.a
+*.bundle
+*.framework
+
+# Xcode Project User State & Generated Projects
+*.xcuserstate
+project.xcworkspace/
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# XcodeGen: Coucou/Notch project can be regenerated via `xcodegen generate`
+NotchBuddy/*.xcodeproj/
+NotchBuddy/build/
+NotchBuddy/*.app/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# ==========================================
+# macOS System Files
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+*.icloud
+
+# ==========================================
+# Secrets, Keys & Credentials (CRITICAL)
+# ==========================================
+*.key
+*.pem
+*.p12
+*.cer
+*.crt
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+!.env.example
+credentials.json
+secrets.json
+auth.json
+*.keychain
+*.keychain-db
+
+# ==========================================
+# Tauri / Rust / Web (windows/ directory)
+# ==========================================
+windows/node_modules/
+windows/dist/
+windows/src-tauri/target/
+node_modules/
+dist/
+target/
+
+# ==========================================
+# Local Scratch & Agent Temp
+# ==========================================
+.claude/
+_prive/
+scratch/
+*.tmp
+*.log
+
+# ==========================================
+# Large Files & Heavy Media (>10MB)
+# ==========================================
+# Archives & Disk Images
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.dmg
+*.iso
+*.pkg
+
+# Machine Learning / AI Models & Weights
+*.bin
+*.onnx
+*.pt
+*.pth
+*.gguf
+*.safetensors
+*.tflite
+*.mlmodel
+*.weights
+*.ckpt
+
+# Heavy Media & Recordings
+*.mov
+*.avi
+*.mkv
+*.mp4
+!docs/media/demo.mp4
+*.wav
+*.flac
+*.mp3
+
+# Databases, Memory Dumps & Large Datasets
+*.sqlite
+*.sqlite3
+*.db
+*.parquet
+*.arrow
+*.dump
+*.core
+*.hprof
+*.trace
+
