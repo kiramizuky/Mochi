@@ -764,6 +764,9 @@ final class AppState: ObservableObject {
     // Chat conversation history
     @Published var chatHistory: [ChatMessage] = []
 
+    // Menandakan apakah AI sedang men-generate atau streaming jawaban
+    @Published var isGenerating: Bool = false
+
     // Pending approval request from Claude Code hook
     @Published var pendingApproval: ApprovalInfo? = nil
 

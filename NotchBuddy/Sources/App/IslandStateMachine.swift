@@ -18,6 +18,9 @@ final class IslandStateMachine {
     /// Fired on every transition: (from, to)
     var onTransition: ((State, State) -> Void)?
 
+    /// Predikat opsional: apakah diperbolehkan collapse dari home ke petit?
+    var canCollapseHome: (() -> Bool)?
+
     /// home → petit delay (seconds). Override for debug.
     var homeToPetitDelay: TimeInterval = 15
     /// petit → hidden delay (seconds). Override for debug.
@@ -162,6 +165,11 @@ final class IslandStateMachine {
         homeCollapseWork?.cancel()
         let item = DispatchWorkItem { [weak self] in
             guard let self, self.state == .home else { return }
+            if let can = self.canCollapseHome, !can() {
+                // Tunda collapse jika kondisi belum memungkinkan (misal AI sedang generate atau bicara)
+                self.scheduleHomeCollapse()
+                return
+            }
             self.transition(to: .petit)
         }
         homeCollapseWork = item

@@ -34,8 +34,8 @@ struct IslandContainer: View {
 
     private var chatPromptHeight: CGFloat {
         let base: CGFloat = 240
-        let perMsg: CGFloat = 40
-        return min(300, base + CGFloat(state.chatHistory.count) * perMsg)
+        let perMsg: CGFloat = 45
+        return min(420, base + CGFloat(state.chatHistory.count) * perMsg)
     }
 
     /// Pixels the content must be pushed down to clear the concave ear transparent area.
@@ -416,6 +416,10 @@ struct CountdownBar: View {
     private func updateBar() {
         guard state.mode != .hidden,
               state.mode == .expanded && !state.isPinned else {
+            barWidth = 0
+            return
+        }
+        if state.isGenerating || VoiceManager.shared.isSpeaking || state.stateOverride == .thinking || state.stateOverride == .searching {
             barWidth = 0
             return
         }

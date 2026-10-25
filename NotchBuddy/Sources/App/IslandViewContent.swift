@@ -935,6 +935,451 @@ private struct ProactiveChipStrip: View {
 }
 
 
+struct StepItem: Identifiable {
+    let id = UUID()
+    let number: Int
+    let badgeText: String
+    let title: String
+    var body: String
+}
+
+enum ParsedBubbleElement: Identifiable {
+    case paragraph(String)
+    case toolStep(name: String, target: String, summary: String, isSuccess: Bool, isRunning: Bool)
+    case stepsSequence([StepItem])
+    case codeBlock(language: String, code: String)
+
+    var id: String {
+        switch self {
+        case .paragraph(let t): return "p_\(t.hashValue)"
+        case .toolStep(let n, let tg, let s, _, _): return "tool_\(n)_\(tg)_\(s.hashValue)"
+        case .stepsSequence(let items): return "steps_\(items.first?.id.uuidString ?? "")"
+        case .codeBlock(let l, let c): return "code_\(l)_\(c.hashValue)"
+        }
+    }
+}
+
+struct AssistantMessageParser {
+    static func parse(_ raw: String) -> [ParsedBubbleElement] {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        var elements: [ParsedBubbleElement] = []
+        let parts = trimmed.components(separatedBy: "```")
+
+        for (index, part) in parts.enumerated() {
+            if index % 2 == 1 {
+                let lines = part.components(separatedBy: "\n")
+                let lang = lines.first?.trimmingCharacters(in: .whitespaces) ?? ""
+                let code = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                elements.append(.codeBlock(language: lang.isEmpty ? "CODE" : lang.uppercased(), code: code.isEmpty ? part : code))
+            } else {
+                let textElements = parseTextSection(part)
+                elements.append(contentsOf: textElements)
+            }
+        }
+        return elements
+    }
+
+    private static func parseTextSection(_ text: String) -> [ParsedBubbleElement] {
+        let rawLines = text.components(separatedBy: "\n")
+        var elements: [ParsedBubbleElement] = []
+
+        var currentParagraphLines: [String] = []
+        var currentSteps: [StepItem] = []
+
+        func flushParagraph() {
+            let p = currentParagraphLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !p.isEmpty {
+                elements.append(.paragraph(p))
+            }
+            currentParagraphLines.removeAll()
+        }
+
+        func flushSteps() {
+            if !currentSteps.isEmpty {
+                elements.append(.stepsSequence(currentSteps))
+                currentSteps.removeAll()
+            }
+        }
+
+        for line in rawLines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            if trimmedLine.isEmpty {
+                if !currentSteps.isEmpty {
+                    continue
+                }
+                flushParagraph()
+                continue
+            }
+
+            // 1. Tool execution line: starts with "→", "->", or "⚡️"
+            if trimmedLine.hasPrefix("→") || trimmedLine.hasPrefix("->") || trimmedLine.hasPrefix("⚡️") {
+                flushParagraph()
+                flushSteps()
+
+                let clean = trimmedLine
+                    .replacingOccurrences(of: "→", with: "")
+                    .replacingOccurrences(of: "->", with: "")
+                    .replacingOccurrences(of: "⚡️", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+
+                var name = "TOOL"
+                var target = ""
+                var summary = clean
+                let isRunning = clean.contains("Sedang dijalankan") || clean.contains("Executing")
+                let isSuccess = !clean.localizedCaseInsensitiveContains("error") && !clean.localizedCaseInsensitiveContains("failed")
+
+                if let colonIdx = clean.firstIndex(of: ":") {
+                    let left = String(clean[..<colonIdx]).trimmingCharacters(in: .whitespaces)
+                    summary = String(clean[clean.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+                    let tokens = left.components(separatedBy: " ")
+                    if let first = tokens.first {
+                        name = first
+                        target = tokens.dropFirst().joined(separator: " ")
+                    }
+                }
+                elements.append(.toolStep(name: name, target: target, summary: summary, isSuccess: isSuccess, isRunning: isRunning))
+                continue
+            }
+
+            // 2. Step pattern check
+            if let stepMatch = matchStepLine(trimmedLine) {
+                flushParagraph()
+                currentSteps.append(stepMatch)
+                continue
+            }
+
+            // 3. Step continuation
+            if !currentSteps.isEmpty {
+                let lastIdx = currentSteps.count - 1
+                if currentSteps[lastIdx].body.isEmpty {
+                    currentSteps[lastIdx].body = trimmedLine
+                } else {
+                    currentSteps[lastIdx].body += "\n" + trimmedLine
+                }
+                continue
+            }
+
+            // 4. Regular paragraph line
+            currentParagraphLines.append(trimmedLine)
+        }
+
+        flushParagraph()
+        flushSteps()
+        return elements
+    }
+
+    private static func matchStepLine(_ line: String) -> StepItem? {
+        let prefixes = ["langkah", "step", "tahap"]
+        let lower = line.lowercased()
+        for p in prefixes {
+            if lower.hasPrefix(p) {
+                let rest = line.dropFirst(p.count).trimmingCharacters(in: .whitespaces)
+                let scanner = Scanner(string: rest)
+                if let num = scanner.scanInt() {
+                    var afterNum = String(rest[scanner.currentIndex...]).trimmingCharacters(in: .whitespaces)
+                    if afterNum.hasPrefix(":") || afterNum.hasPrefix(".") || afterNum.hasPrefix("-") {
+                        afterNum = String(afterNum.dropFirst()).trimmingCharacters(in: .whitespaces)
+                    }
+                    let (title, body) = splitTitleAndBody(afterNum)
+                    return StepItem(number: num, badgeText: "\(num)", title: title, body: body)
+                }
+            }
+        }
+
+        let scanner = Scanner(string: line)
+        if let num = scanner.scanInt(), num > 0 {
+            let remainder = String(line[scanner.currentIndex...]).trimmingCharacters(in: .whitespaces)
+            if remainder.hasPrefix(".") || remainder.hasPrefix(")") {
+                var afterDot = String(remainder.dropFirst()).trimmingCharacters(in: .whitespaces)
+                let (title, body) = splitTitleAndBody(afterDot)
+                if !title.isEmpty {
+                    return StepItem(number: num, badgeText: "\(num)", title: title, body: body)
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func splitTitleAndBody(_ text: String) -> (String, String) {
+        var raw = text.trimmingCharacters(in: .whitespaces)
+        if raw.hasPrefix("**") {
+            let afterFirst = raw.dropFirst(2)
+            if let endBold = afterFirst.range(of: "**") {
+                let title = String(afterFirst[..<endBold.lowerBound]).trimmingCharacters(in: .whitespaces)
+                var body = String(afterFirst[endBold.upperBound...]).trimmingCharacters(in: .whitespaces)
+                if body.hasPrefix(":") || body.hasPrefix("-") {
+                    body = String(body.dropFirst()).trimmingCharacters(in: .whitespaces)
+                }
+                return (title, body)
+            }
+        }
+
+        if let colonIdx = raw.range(of: ":") {
+            let title = String(raw[..<colonIdx.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let body = String(raw[colonIdx.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if !title.isEmpty && title.count <= 60 {
+                return (title, body)
+            }
+        }
+
+        if let dashIdx = raw.range(of: " - ") {
+            let title = String(raw[..<dashIdx.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let body = String(raw[dashIdx.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if !title.isEmpty && title.count <= 60 {
+                return (title, body)
+            }
+        }
+
+        return (raw, "")
+    }
+}
+
+struct StepSequenceView: View {
+    let steps: [StepItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(spacing: 0) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.accentColor, Color(hex: "#4F46E5")],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 20, height: 20)
+                                .shadow(color: Color.accentColor.opacity(0.35), radius: 2, x: 0, y: 1)
+
+                            Text(step.badgeText)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+
+                        if index < steps.count - 1 {
+                            Rectangle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.accentColor.opacity(0.4), Color.white.opacity(0.1)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .frame(width: 1.5)
+                                .frame(minHeight: 18)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(LocalizedStringKey(step.title))
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundColor(Color(hex: "#F1F2F4"))
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if !step.body.isEmpty {
+                            Text(LocalizedStringKey(step.body))
+                                .font(.system(size: 11.5))
+                                .foregroundColor(Color(hex: "#A0A7B5"))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .padding(.bottom, index < steps.count - 1 ? 8 : 2)
+
+                    Spacer(minLength: 4)
+                }
+            }
+        }
+        .padding(.vertical, 7)
+        .padding(.horizontal, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
+}
+
+struct ToolStepBadgeView: View {
+    let name: String
+    let target: String
+    let summary: String
+    let isSuccess: Bool
+    let isRunning: Bool
+
+    var toolIcon: String {
+        let lower = name.lowercased()
+        if lower.contains("shell") || lower.contains("bash") || lower.contains("exec") { return "terminal.fill" }
+        if lower.contains("file") || lower.contains("write") || lower.contains("read") { return "doc.text.fill" }
+        if lower.contains("search") || lower.contains("web") { return "magnifyingglass" }
+        if lower.contains("app") || lower.contains("window") { return "macwindow" }
+        return "gearshape.fill"
+    }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: toolIcon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(isRunning ? Color.orange : (isSuccess ? Color.accentColor : Color.red))
+                .frame(width: 14)
+
+            Text(name.uppercased())
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundColor(Color(hex: "#D1D5DB"))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            if !target.isEmpty {
+                Text(target)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(Color(hex: "#F3F4F6"))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 4)
+
+            if isRunning {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .scaleEffect(0.5)
+                        .frame(width: 10, height: 10)
+                    Text("Menjalankan…")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(.orange)
+                }
+            } else {
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(isSuccess ? Color.green : Color.red)
+                        .frame(width: 5, height: 5)
+                    Text(summary)
+                        .font(.system(size: 10))
+                        .foregroundColor(Color(hex: "#9CA3AF"))
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(hex: "#14171E"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(isRunning ? Color.orange.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
+}
+
+struct CodeBlockView: View {
+    let language: String
+    let code: String
+    @State private var copied: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(language)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(Color(hex: "#94A3B8"))
+
+                Spacer()
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(code, forType: .string)
+                    withAnimation { copied = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        withAnimation { copied = false }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 9))
+                        Text(copied ? "Tersalin!" : "Salin")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .foregroundColor(copied ? .green : Color(hex: "#A0AAB8"))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Color(hex: "#181B22"))
+
+            Divider().background(Color.white.opacity(0.06))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(code)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(Color(hex: "#E2E8F0"))
+                    .textSelection(.enabled)
+                    .padding(8)
+            }
+        }
+        .background(Color(hex: "#0E1116"))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+struct ParagraphView: View {
+    let text: String
+
+    var body: some View {
+        Text(LocalizedStringKey(text))
+            .font(.system(size: 12.5))
+            .foregroundColor(Color(hex: "#B0B5BE"))
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+    }
+}
+
+struct AssistantMessageView: View {
+    let content: String
+
+    var elements: [ParsedBubbleElement] {
+        AssistantMessageParser.parse(content)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(elements) { elem in
+                switch elem {
+                case .paragraph(let text):
+                    ParagraphView(text: text)
+                case .toolStep(let name, let target, let summary, let isSuccess, let isRunning):
+                    ToolStepBadgeView(name: name, target: target, summary: summary, isSuccess: isSuccess, isRunning: isRunning)
+                case .stepsSequence(let steps):
+                    StepSequenceView(steps: steps)
+                case .codeBlock(let language, let code):
+                    CodeBlockView(language: language, code: code)
+                }
+            }
+        }
+    }
+}
+
 struct ChatBubble: View {
     let message: ChatMessage
 
@@ -951,11 +1396,7 @@ struct ChatBubble: View {
                     .background(Color.white.opacity(0.13))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
-                Text(message.content)
-                    .font(.system(size: 12.5))
-                    .foregroundColor(Color(hex: "#B0B5BE"))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                AssistantMessageView(content: message.content)
                 Spacer(minLength: 8)
             }
         }

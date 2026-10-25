@@ -178,6 +178,14 @@ final class IslandWindowController: NSWindowController {
     // MARK: - FSM wiring
 
     private func wireFSM() {
+        fsm.canCollapseHome = { [weak self] in
+            guard let self else { return true }
+            if self.state.isPinned || self.state.isGenerating || VoiceManager.shared.isSpeaking || self.state.stateOverride == .thinking || self.state.stateOverride == .searching {
+                return false
+            }
+            return true
+        }
+
         fsm.onTransition = { [weak self] from, to in
             guard let self else { return }
             switch to {
@@ -317,9 +325,13 @@ final class IslandWindowController: NSWindowController {
         // Auto-close check (matches prototype line 892:
         // if expanded and not pinned and now - lastActivity > autoClose, collapse)
         if state.mode == .expanded && !state.isPinned && !inAttachDrag && !state.fileDragOver {
-            let elapsed = Date.now.timeIntervalSince(state.lastActivity)
-            if elapsed >= state.autoCloseInterval {
-                collapse()
+            if state.isGenerating || VoiceManager.shared.isSpeaking || state.stateOverride == .thinking || state.stateOverride == .searching {
+                state.lastActivity = .now
+            } else {
+                let elapsed = Date.now.timeIntervalSince(state.lastActivity)
+                if elapsed >= state.autoCloseInterval {
+                    collapse()
+                }
             }
         }
 
@@ -865,8 +877,8 @@ final class IslandWindowController: NSWindowController {
         let islandH: CGFloat
         if s.mode == .expanded && s.view == .prompt {
             let base: CGFloat = 240
-            let perMsg: CGFloat = 40
-            islandH = min(300, base + CGFloat(s.chatHistory.count) * perMsg)
+            let perMsg: CGFloat = 45
+            islandH = min(420, base + CGFloat(s.chatHistory.count) * perMsg)
         } else {
             islandH = fixedH
         }
@@ -930,8 +942,8 @@ final class IslandPanel: NSPanel {
         let h: CGFloat
         if s.mode == .expanded && s.view == .prompt {
             let base: CGFloat = 240
-            let perMsg: CGFloat = 40
-            h = min(300, base + CGFloat(s.chatHistory.count) * perMsg)
+            let perMsg: CGFloat = 45
+            h = min(420, base + CGFloat(s.chatHistory.count) * perMsg)
         } else {
             h = fixedH
         }

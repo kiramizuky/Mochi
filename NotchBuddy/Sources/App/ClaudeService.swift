@@ -117,6 +117,17 @@ final class ClaudeService {
             return
         }
 
+        await MainActor.run {
+            state.isGenerating = true
+            state.lastActivity = .now
+        }
+        defer {
+            Task { @MainActor in
+                state.isGenerating = false
+                state.lastActivity = .now
+            }
+        }
+
         // Window/file context is attached to the first message only.
         var blocks: [LLMContentBlock] = []
         if chatStore.isEmpty, let context {
@@ -163,7 +174,10 @@ final class ClaudeService {
                 model: model,
                 maxTokens: 4096,
                 onEvent: { event in
-                    await MainActor.run { composer.handle(event) }
+                    await MainActor.run {
+                        state.lastActivity = .now
+                        composer.handle(event)
+                    }
                 }
             )
 
@@ -352,6 +366,7 @@ private final class AgentBubbleComposer {
     private weak var state: AppState?
     private var buffer = ""   // committed text and tool lines
     private var stream = ""   // live deltas of the current step
+    private var liveToolStep: String? = nil
 
     init(bubbleId: UUID, state: AppState) {
         self.bubbleId = bubbleId
@@ -367,15 +382,18 @@ private final class AgentBubbleComposer {
             stream += piece
             if state.stateOverride == .thinking { state.stateOverride = nil }
             render()
-        case .toolStarted:
+        case .toolStarted(_, let name, let target):
             commit()
+            liveToolStep = "→ \(name) \(target): Sedang dijalankan…"
             render()
         case .toolFinished(_, let name, let target, let summary, _):
+            liveToolStep = nil
             commit()
             if !buffer.isEmpty { buffer += "\n" }
             buffer += "→ \(name) \(target): \(summary)"
             render()
         case .stepLimitReached:
+            liveToolStep = nil
             commit()
             render()
         }
@@ -389,9 +407,16 @@ private final class AgentBubbleComposer {
     }
 
     private var display: String {
-        if stream.isEmpty { return buffer }
-        if buffer.isEmpty { return stream }
-        return buffer + "\n" + stream
+        var result = buffer
+        if !stream.isEmpty {
+            if !result.isEmpty { result += "\n" }
+            result += stream
+        }
+        if let live = liveToolStep {
+            if !result.isEmpty { result += "\n" }
+            result += live
+        }
+        return result
     }
 
     private func render() {
