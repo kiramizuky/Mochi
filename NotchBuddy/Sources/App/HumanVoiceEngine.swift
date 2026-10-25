@@ -223,7 +223,9 @@ final class HumanVoiceEngine: NSObject, AVAudioPlayerDelegate {
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-            let cleanVoice = voice.isEmpty ? "autumn" : voice.lowercased()
+            let allowedVoices = ["autumn", "diana", "hannah", "austin", "daniel", "troy"]
+            let inputVoice = voice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let cleanVoice = allowedVoices.contains(inputVoice) ? inputVoice : "autumn"
             let cleanModel = model.isEmpty ? "canopylabs/orpheus-v1-english" : model
 
             let payload: [String: Any] = [

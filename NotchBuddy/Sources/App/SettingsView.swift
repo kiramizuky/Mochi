@@ -66,6 +66,7 @@ struct SettingsView: View {
     @State private var stripeKey: String    = KeychainStore.shared.get("stripe-api-key")  ?? ""
     @State private var calcomKey: String    = KeychainStore.shared.get("calcom-api-key")  ?? ""
     @State private var notionKey: String    = KeychainStore.shared.get("notion-api-key")  ?? ""
+    @State private var elevenLabsKey: String = KeychainStore.shared.get("elevenlabs-api-key") ?? ""
 
     // Hotkey
     @State private var hotkeyFlags: UInt    = AppState.shared.hotkeyFlags
@@ -475,13 +476,32 @@ struct SettingsView: View {
                             } else if voice.ttsEngine == .elevenLabs {
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(spacing: 8) {
+                                        Text("API Key:")
+                                            .font(.system(size: 11))
+                                        SecureField("xi-api-key (xi_...)", text: $elevenLabsKey)
+                                            .textFieldStyle(.roundedBorder)
+                                            .frame(maxWidth: 220)
+                                        Button("Simpan") {
+                                            let trimmed = elevenLabsKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            if trimmed.isEmpty {
+                                                KeychainStore.shared.remove("elevenlabs-api-key")
+                                                statusMessage = "ElevenLabs Key dihapus."
+                                            } else {
+                                                KeychainStore.shared.set("elevenlabs-api-key", value: trimmed)
+                                                statusMessage = "✓ ElevenLabs Key tersimpan."
+                                            }
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                    }
+                                    HStack(spacing: 8) {
                                         Text("Voice ID:")
                                             .font(.system(size: 11))
                                         TextField("21m00Tcm4TlvDq8ikWAM", text: $voice.elevenLabsVoiceId)
                                             .textFieldStyle(.roundedBorder)
                                             .frame(maxWidth: 220)
                                     }
-                                    Text("Model eleven_flash_v2_5 untuk latensi super rendah.")
+                                    Text("Memerlukan ElevenLabs API Key. Model eleven_flash_v2_5 untuk latensi super rendah.")
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -503,10 +523,11 @@ struct SettingsView: View {
                                             .font(.system(size: 11))
                                         Picker("", selection: $voice.groqVoice) {
                                             Text("Autumn (Warm & Natural - Default)").tag("autumn")
-                                            Text("Troy (Male / Natural)").tag("troy")
-                                            Text("Orla (Female / Expressive)").tag("orla")
-                                            Text("Austin (Confident)").tag("austin")
-                                            Text("Shelby (Gentle)").tag("shelby")
+                                            Text("Diana (Expressive Female)").tag("diana")
+                                            Text("Hannah (Bright Female)").tag("hannah")
+                                            Text("Austin (Confident Male)").tag("austin")
+                                            Text("Daniel (Deep Male)").tag("daniel")
+                                            Text("Troy (Conversational Male)").tag("troy")
                                         }
                                         .pickerStyle(.menu)
                                         .frame(maxWidth: 240)
@@ -1220,6 +1241,7 @@ struct SettingsView: View {
         saveKey("stripe-api-key",  value: stripeKey)
         saveKey("calcom-api-key",  value: calcomKey)
         saveKey("notion-api-key",  value: notionKey)
+        saveKey("elevenlabs-api-key", value: elevenLabsKey)
         statusMessage = "✓ Integration keys saved."
     }
 

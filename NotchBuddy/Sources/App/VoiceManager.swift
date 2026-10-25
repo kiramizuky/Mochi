@@ -31,8 +31,15 @@ final class VoiceManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegat
     @Published var elevenLabsVoiceId: String = UserDefaults.standard.string(forKey: "elevenLabsVoiceId") ?? "21m00Tcm4TlvDq8ikWAM" {
         didSet { UserDefaults.standard.set(elevenLabsVoiceId, forKey: "elevenLabsVoiceId") }
     }
-    @Published var groqVoice: String = UserDefaults.standard.string(forKey: "groqVoice") ?? "autumn" {
-        didSet { UserDefaults.standard.set(groqVoice, forKey: "groqVoice") }
+    private static let validGroqVoices = ["autumn", "diana", "hannah", "austin", "daniel", "troy"]
+    @Published var groqVoice: String = {
+        let stored = UserDefaults.standard.string(forKey: "groqVoice")?.lowercased() ?? "autumn"
+        return ["autumn", "diana", "hannah", "austin", "daniel", "troy"].contains(stored) ? stored : "autumn"
+    }() {
+        didSet {
+            let valid = Self.validGroqVoices.contains(groqVoice.lowercased()) ? groqVoice.lowercased() : "autumn"
+            UserDefaults.standard.set(valid, forKey: "groqVoice")
+        }
     }
     @Published var groqModel: String = UserDefaults.standard.string(forKey: "groqModel") ?? "canopylabs/orpheus-v1-english" {
         didSet { UserDefaults.standard.set(groqModel, forKey: "groqModel") }
