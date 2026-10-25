@@ -46,8 +46,28 @@ final class AutonomousAgent: @unchecked Sendable {
             AppState.shared.view = .prompt
         }
 
-        let steps = engine.plan(goal: goal)
-        let results = await engine.run(steps: steps)
+        // 1. Rencanakan langkah secara otonom via LLM Planner (dengan fallback cerdas)
+        let steps = await engine.planAutonomous(goal: goal)
+
+        await MainActor.run {
+            if let idx = AppState.shared.autonomousTasks.firstIndex(where: { $0.id == taskId }) {
+                AppState.shared.autonomousTasks[idx].steps = steps
+                AppState.shared.autonomousTasks[idx].updatedAt = .now
+            }
+        }
+
+        // 2. Jalankan langkah-langkah dengan pemantauan status per langkah
+        let results = await engine.run(steps: steps) { stepIndex, updatedStep, stepResult in
+            await MainActor.run {
+                if let idx = AppState.shared.autonomousTasks.firstIndex(where: { $0.id == taskId }) {
+                    if stepIndex < AppState.shared.autonomousTasks[idx].steps.count {
+                        AppState.shared.autonomousTasks[idx].steps[stepIndex] = updatedStep
+                        AppState.shared.autonomousTasks[idx].currentStepIndex = stepIndex
+                        AppState.shared.autonomousTasks[idx].updatedAt = .now
+                    }
+                }
+            }
+        }
 
         let success = results.allSatisfy { $0.ok }
         let outputs = results.map { $0.output }.joined(separator: "\n")

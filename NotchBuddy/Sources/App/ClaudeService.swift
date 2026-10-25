@@ -54,9 +54,10 @@ final class ClaudeService {
     """
 
     /// System prompt plus what the app remembers about the user ("" when empty).
-    private var systemWithMemory: String {
+    /// Menggunakan RAG semantik dinamis dari VectorMemoryStore berdasarkan query pengguna.
+    private func systemPrompt(for query: String = "") -> String {
         let remembered = MemoryService.shared.formatForSystemPrompt()
-        let preferences = VectorMemoryStore.shared.preferenceDigest()
+        let preferences = VectorMemoryStore.shared.preferenceDigest(query: query.isEmpty ? nil : query, maxItems: 6)
         var full = systemPrompt
         if !remembered.isEmpty {
             full += "\n\n" + remembered
@@ -112,7 +113,17 @@ final class ClaudeService {
 
     func chat(query: String, context: PromptContext?, state: AppState) async {
         VoiceManager.shared.stopSpeaking()
-        guard provider.isConfigured() else {
+
+        // Smart Intent Routing: tentukan tier eksekusi & provider terbaik (Edge SLM vs Cloud LLM)
+        let route = SmartIntentRouter.shared.selectExecution(
+            for: query,
+            activeProvider: provider,
+            activeModel: model
+        )
+        let activeExecutorProvider = route.provider
+        let activeExecutorModel = route.model
+
+        guard activeExecutorProvider.isConfigured() || provider.isConfigured() else {
             await showError("API key missing. Open settings.", state: state)
             return
         }
@@ -151,18 +162,16 @@ final class ClaudeService {
         state.chatHistory.append(placeholder)
         let bubbleId = placeholder.id
 
-        // Bahasa input → instruksi bahasa tambahan ke system prompt (per-turn).
+        // Bahasa input & RAG Semantik Memori → instruksi tambahan ke system prompt (per-turn).
         let language = LanguageRouter.detect(query)
-        let system: String
-        if language.isEmpty {
-            system = systemWithMemory
-        } else {
-            system = systemWithMemory + "\n\n" + LanguageRouter.systemInstruction(for: language)
+        var system = systemPrompt(for: query)
+        if !language.isEmpty {
+            system += "\n\n" + LanguageRouter.systemInstruction(for: language)
         }
 
         let composer = AgentBubbleComposer(bubbleId: bubbleId, state: state)
         let agent = AgentController(
-            provider: provider,
+            provider: activeExecutorProvider,
             system: system,
             executor: toolExecutor,
             enableWebSearch: false
@@ -171,7 +180,7 @@ final class ClaudeService {
         do {
             let outcome = try await agent.run(
                 history: chatStore.all,
-                model: model,
+                model: activeExecutorModel,
                 maxTokens: 4096,
                 onEvent: { event in
                     await MainActor.run {
@@ -194,6 +203,45 @@ final class ClaudeService {
             VoiceManager.shared.speak(text)
             NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
         } catch {
+            // Fallback otomatis ke Cloud LLM jika eksekusi Edge SLM gagal/offline
+            if route.tier == .localSLM && activeExecutorProvider.id != self.provider.id && self.provider.isConfigured() {
+                AppLog.shared.log("Edge SLM tidak responsif (\(error.localizedDescription)). Melakukan fallback ke Cloud LLM...")
+                let fallbackAgent = AgentController(
+                    provider: self.provider,
+                    system: system,
+                    executor: toolExecutor,
+                    enableWebSearch: false
+                )
+                do {
+                    let fallbackOutcome = try await fallbackAgent.run(
+                        history: chatStore.all,
+                        model: self.model,
+                        maxTokens: 4096,
+                        onEvent: { event in
+                            await MainActor.run {
+                                state.lastActivity = .now
+                                composer.handle(event)
+                            }
+                        }
+                    )
+                    var text = fallbackOutcome.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if fallbackOutcome.hitStepLimit {
+                        text += "\n… (stopped after \(AgentController.maxSteps) steps)"
+                    }
+                    guard !text.isEmpty else { throw LLMError("No response text.") }
+
+                    chatStore.appendAssistant(text: text)
+                    updateBubble(id: bubbleId, text: text, state: state)
+                    state.stateOverride = nil
+                    state.view = .prompt
+                    VoiceManager.shared.speak(text)
+                    NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
+                    return
+                } catch {
+                    // jika fallback cloud juga gagal, lanjut ke penanganan error di bawah
+                }
+            }
+
             // Keep any partial text on screen, but drop the failed turn from the
             // sent history so the next attempt re-sends it cleanly.
             chatStore.rollbackLast()

@@ -25,6 +25,7 @@ swiftc NotchBuddy/Sources/App/LLMProvider.swift \
     NotchBuddy/Sources/App/NodeRunner.swift \
     NotchBuddy/Sources/App/AutonomousTask.swift \
     NotchBuddy/Sources/App/TaskScheduler.swift \
+    NotchBuddy/Sources/App/SelfCorrection.swift \
     NotchBuddy/Sources/App/WorkflowEngine.swift \
     -framework AVFoundation -framework ApplicationServices -framework CoreGraphics -framework Security -framework MediaPlayer -framework JavaScriptCore \
     tests/Phase10Tests.swift \

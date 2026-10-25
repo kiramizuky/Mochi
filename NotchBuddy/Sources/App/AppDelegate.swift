@@ -138,11 +138,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         TaskScheduler.shared.start()
 
-        // Setup ProactiveEngine, Ambient Context Observer, & Idle Detection
+        // Setup ProactiveEngine, Ambient Context Observer, Idle Detection, & File System Watcher
         ProactiveEngine.shared.refresh()
         AppState.shared.proactiveChips = ProactiveEngine.shared.chips
         AmbientContextObserver.shared.start()
         IdleDetectionEngine.shared.start()
+        FileSystemWatcher.shared.start()
         _ = NightShiftWorker.shared
 
         NotificationCenter.default.addObserver(forName: .proactiveEngineRefresh, object: nil, queue: .main) { _ in

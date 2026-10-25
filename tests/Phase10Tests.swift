@@ -9,6 +9,7 @@ import Foundation
         testTaskSchedulerNextRun()
         testTaskSchedulerAddRemoveEnable()
         testWorkflowEnginePlan()
+        await testWorkflowEnginePlanAutonomous()
         await testWorkflowEngineRunShell()
         print("Phase10Tests: all cases passed")
     }
@@ -149,6 +150,52 @@ func testWorkflowEnginePlan() {
     // Default → shell_run.
     let s4 = engine.plan(goal: "halo apa kabar")
     precondition(s4.contains { $0.tool == "shell_run" }, "default should be shell_run: \(s4)")
+}
+
+final class ScriptedPlannerProvider: LLMProvider, @unchecked Sendable {
+    let id = "scripted_planner"
+    let displayName = "Scripted Planner"
+    let defaultModel = "mock"
+    let fallbackModels: [(id: String, label: String)] = [("mock", "Mock")]
+
+    var responseText: String
+    init(responseText: String) { self.responseText = responseText }
+
+    func isConfigured() -> Bool { true }
+    func listModels() async -> [(id: String, label: String)] { [("mock", "Mock")] }
+    func complete(_ request: LLMRequest) async throws -> LLMResponse {
+        LLMResponse(content: [.text(responseText)], stopReason: .endTurn)
+    }
+    func stream(_ request: LLMRequest) -> AsyncThrowingStream<LLMStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.completed(LLMResponse(content: [.text(self.responseText)], stopReason: .endTurn)))
+            continuation.finish()
+        }
+    }
+}
+
+func testWorkflowEnginePlanAutonomous() async {
+    let engine = WorkflowEngine.shared
+
+    // 1. Valid JSON returned by LLM planner
+    let jsonPlan = """
+    [
+      {"name": "Cari data", "tool": "web_search", "input": {"query": "berita hari ini"}},
+      {"name": "Tulis ringkasan", "tool": "file_write", "input": {"path": "~/berita.txt", "content": "konten"}}
+    ]
+    """
+    let provider = ScriptedPlannerProvider(responseText: jsonPlan)
+    let steps = await engine.planAutonomous(goal: "cari berita lalu simpan", provider: provider, model: "mock")
+    precondition(steps.count == 2, "planAutonomous should return 2 steps, got \(steps.count)")
+    precondition(steps[0].tool == "web_search", "first step tool should be web_search")
+    precondition(steps[0].input["query"]?.stringValue == "berita hari ini", "query should match")
+    precondition(steps[1].tool == "file_write", "second step tool should be file_write")
+
+    // 2. Invalid JSON from LLM -> fallback to deterministic plan
+    let badProvider = ScriptedPlannerProvider(responseText: "bukan json valid sama sekali")
+    let fallbackSteps = await engine.planAutonomous(goal: "cari cara install node js", provider: badProvider, model: "mock")
+    precondition(!fallbackSteps.isEmpty, "should fallback to deterministic plan")
+    precondition(fallbackSteps.contains { $0.tool == "web_search" }, "fallback should have web_search")
 }
 
 func testWorkflowEngineRunShell() async {

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Semantic Vector RAG On-the-Fly**: Integrasi semantik `VectorMemoryStore` ke dalam `ClaudeService.systemPrompt(for:)`. Mengambil preferensi pengguna dan memori jangka panjang dengan relevansi cosinus tertinggi secara dinamis sesuai query percakapan aktif. Menyinkronkan aksi `memory_save` langsung ke indeks vektor.
+- **File System Watcher Daemon**: Pemantau sistem berkas otonom berbasis `DispatchSource` pada direktori `~/Downloads` dan `~/Desktop` dengan 0% CPU saat diam. Secara otomatis mendeteksi berkas baru (faktur/invoice, spreadsheet data, tangkapan layar, arsip, kode), menyaring berkas sementara, dan memicu rekomendasi proaktif (*Proactive Chips*) di Notch beserta reaksi emot Mochi.
+- **Smart Intent Router & Edge/Cloud Hybrid Routing**: Terintegrasi langsung dengan `ClaudeService.chat()`. Query lokal dan cepat otomatis diarahkan ke on-device Edge SLM (`local_mlx`/Ollama) untuk latensi ultra-rendah dan privasi, dengan mekanisme silent fallback otomatis ke Cloud LLM jika model lokal belum aktif.
+- **LLM Dynamic DAG Workflow Planner**: `WorkflowEngine` ditingkatkan dengan `planAutonomous()`, merencanakan alur kerja multi-langkah menggunakan LLM terstruktur berbasis daftar alat `ToolExecutor`, terhubung dengan mekanisme `SelfCorrection` dan pelaporan status per-langkah secara real-time pada `AutonomousAgent`.
 - **Chat Mode Auto-Close Guard**: Island/notch will no longer prematurely collapse or hide while the AI is generating, streaming responses, executing tools, or speaking via TTS. Added FSM protection (`canCollapseHome`) and activity state tracking (`isGenerating`).
 - **Visual Step-by-Step AI Responses**: Assistant chat responses now automatically parse and render procedural steps (`1. ...`, `Langkah X: ...`, `Step X: ...`) into a sleek timeline card with glowing numbered circle badges and connected vertical tracks.
 - **Agent Tool Execution Badges**: Shell executions and tool operations are now displayed with live running indicators and status pills instead of raw text.

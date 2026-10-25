@@ -1368,6 +1368,8 @@ final class ToolExecutor: @unchecked Sendable {
     private func saveMemory(_ text: String) -> ToolResult {
         do {
             let isNew = try memory.remember(text)
+            // Sinkronkan juga ke basis data vektor untuk pencarian semantik (RAG)
+            VectorMemoryStore.shared.savePreference(text: text, category: "fact")
             NotificationCenter.default.post(name: .proactiveEngineRefresh, object: nil)
             let output = isNew ? "Remembered." : "Already remembered — refreshed."
             return ToolResult(output: output, isError: false, exitCode: 0)
