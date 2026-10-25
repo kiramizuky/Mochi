@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Multi-Editor & Terminal Coding Support**: Removed hardcoded VS Code restriction in `HookServer`. Added support for Antigravity, Cursor, Windsurf, Codex, Claude Desktop, iTerm2, Warp, Ghostty, and Terminal.app with configurable preferred editor and toggle in Settings.
+- **Settings UI Enhancement**: Added dedicated "Editor & Coding Agents" card and renamed "Active pills" to "Slot Integrasi Aplikasi Aktif (Active Slots)" with clear descriptions.
 - **Groq AI Provider & Multi-Key Pool**: Added full support for Groq AI (`openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, etc.) with streaming SSE and automatic multi-key rotation on HTTP 429 rate limits.
 - **Groq Orpheus TTS with Auto-Rotation**: Added ultra-fast text-to-speech using Canopy Labs Orpheus models (`canopylabs/orpheus-v1-english`, `canopylabs/orpheus-arabic-saudi`) with multi-key failover and selectable voice personas (`troy`, `orla`, `autumn`, `austin`, `shelby`).
 - Compact island on screens without a notch (#22) — thanks @Kamasoutra

@@ -625,6 +625,12 @@ final class AppState: ObservableObject {
     @Published var hotkeyEnabled: Bool = false {
         didSet { UserDefaults.standard.set(hotkeyEnabled, forKey: "hotkeyEnabled") }
     }
+    @Published var allowAllEditors: Bool = UserDefaults.standard.object(forKey: "allowAllEditors") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(allowAllEditors, forKey: "allowAllEditors") }
+    }
+    @Published var preferredEditor: String = UserDefaults.standard.string(forKey: "preferredEditor") ?? "auto" {
+        didSet { UserDefaults.standard.set(preferredEditor, forKey: "preferredEditor") }
+    }
     var hotkeyFlags: UInt = NSEvent.ModifierFlags([.command, .shift]).rawValue {
         didSet { UserDefaults.standard.set(Int(hotkeyFlags), forKey: "hotkeyFlags") }
     }

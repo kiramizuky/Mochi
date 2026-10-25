@@ -1281,7 +1281,7 @@ struct IntegrationCardView: View {
 
                 HStack(spacing: 8) {
                     if task.id == "integration_claude" {
-                        Button("Open Visual Studio Code") { openVSCode() }
+                        Button("Open in Editor") { openVSCode() }
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(Color(hex: task.color).opacity(0.7))
                             .buttonStyle(.plain)
@@ -1347,10 +1347,28 @@ struct IntegrationCardView: View {
     }
 
     private func openVSCode() {
-        let ids = ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.vscodium.codium"]
+        let preferred = appState.preferredEditor
+        var ids: [String]
+        switch preferred {
+        case "cursor":
+            ids = ["com.todesktop.230313mzl4w4u92", "com.cursor.Cursor"]
+        case "antigravity":
+            ids = ["com.google.antigravity", "com.antigravity.ide", "com.google.Antigravity"]
+        case "windsurf":
+            ids = ["com.codeium.windsurf"]
+        case "vscode":
+            ids = ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.vscodium.codium"]
+        default:
+            ids = [
+                "com.todesktop.230313mzl4w4u92", "com.cursor.Cursor",
+                "com.google.antigravity", "com.antigravity.ide",
+                "com.codeium.windsurf",
+                "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.vscodium.codium"
+            ]
+        }
         let appURL = ids.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }.first
 
-        // If we have a project folder, open it directly in VS Code
+        // If we have a project folder, open it directly in the editor
         if let cwd = task.sessionCwd, !cwd.isEmpty, let appURL = appURL {
             NSWorkspace.shared.open(
                 [URL(fileURLWithPath: cwd)],

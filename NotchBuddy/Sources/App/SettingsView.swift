@@ -934,11 +934,47 @@ struct SettingsView: View {
                     .padding(6)
                 }
 
-                // MARK: Active pills
-                GroupBox("Active pills") {
+                // MARK: Editor & Coding Agents
+                GroupBox("Editor & Coding Agents") {
                     VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Izinkan Semua Editor & Terminal", isOn: $state.allowAllEditors)
+                        Text("Terima event Claude Code / Coding Agent dari Antigravity, Cursor, Windsurf, VS Code, iTerm, Warp, Terminal, Codex, dll.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Divider().padding(.vertical, 2)
+
+                        HStack(spacing: 8) {
+                            Text("Editor Utama:")
+                                .font(.system(size: 11, weight: .semibold))
+                            Picker("", selection: $state.preferredEditor) {
+                                Text("Auto-detect (Aktif / Terinstal)").tag("auto")
+                                Text("Antigravity").tag("antigravity")
+                                Text("Cursor").tag("cursor")
+                                Text("Visual Studio Code").tag("vscode")
+                                Text("Windsurf").tag("windsurf")
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 240)
+                        }
+                        Text("Editor yang akan dibuka saat Anda mengklik tombol 'Open in Editor' di notch.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(6)
+                }
+
+                // MARK: Active Slots
+                GroupBox("Slot Integrasi Aplikasi Aktif (Active Slots)") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Pilih hingga 4 integrasi (seperti GitHub, Linear, Slack, WhatsApp, PyCharm, Word, Excel, dll.) untuk dimunculkan sebagai pill di Notch Island.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
                         HStack {
-                            Text("VS Code")
+                            Text("Coding Agent (Claude Code)")
                                 .font(.system(size: 12, weight: .semibold))
                             Circle().fill(Color(hex: "#F5F6F8")).frame(width: 8, height: 8)
                             Spacer()

@@ -157,6 +157,18 @@ final class HookServer: @unchecked Sendable {
     // View switches only happen if VS Code is the currently focused mochi.
     // When not focused: state updates animate the mini bot in the pill; badge shown for alerts.
 
+    private func isEditorAllowed(termProgram: String, bundleId: String) -> Bool {
+        let allowAll = UserDefaults.standard.object(forKey: "allowAllEditors") as? Bool ?? true
+        if allowAll { return true }
+        let allowed = [
+            "vscode", "code", "cursor", "antigravity", "windsurf", "codex", "claude",
+            "terminal", "iterm", "warp", "ghostty", "alacritty", "kitty", "pycharm", "intellij", "sublime"
+        ]
+        let lowerTerm = termProgram.lowercased()
+        let lowerBundle = bundleId.lowercased()
+        return allowed.contains { lowerTerm.contains($0) || lowerBundle.contains($0) }
+    }
+
     @MainActor
     private func processEvent(name: String, payload: [String: Any]) {
         let state = AppState.shared
@@ -167,9 +179,7 @@ final class HookServer: @unchecked Sendable {
 
         let termProgram = payload["term_program"] as? String ?? ""
         let bundleId    = payload["bundle_id"]    as? String ?? ""
-        let isVSCode = termProgram.lowercased().contains("vscode") ||
-                       bundleId.lowercased().contains("vscode")
-        guard isVSCode else {
+        guard isEditorAllowed(termProgram: termProgram, bundleId: bundleId) else {
             nbLog("Ignored \(name) from \(termProgram.isEmpty ? bundleId : termProgram) (\(projectName))")
             return
         }
@@ -298,9 +308,7 @@ final class HookServer: @unchecked Sendable {
 
         let termProgram = payload["term_program"] as? String ?? ""
         let bundleId    = payload["bundle_id"]    as? String ?? ""
-        let isVSCode = termProgram.lowercased().contains("vscode") ||
-                       bundleId.lowercased().contains("vscode")
-        guard isVSCode else {
+        guard isEditorAllowed(termProgram: termProgram, bundleId: bundleId) else {
             Task.detached { [weak self] in
                 self?.sendLine(fd: fd, text: #"{"permissionDecision":"ask"}"#)
                 close(fd)
