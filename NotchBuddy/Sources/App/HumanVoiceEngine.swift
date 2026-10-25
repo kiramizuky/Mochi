@@ -222,15 +222,19 @@ final class HumanVoiceEngine: NSObject, AVAudioPlayerDelegate {
             request.httpMethod = "POST"
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("MochiAssistant/1.0", forHTTPHeaderField: "User-Agent")
 
             let allowedVoices = ["autumn", "diana", "hannah", "austin", "daniel", "troy"]
             let inputVoice = voice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let cleanVoice = allowedVoices.contains(inputVoice) ? inputVoice : "autumn"
             let cleanModel = model.isEmpty ? "canopylabs/orpheus-v1-english" : model
 
+            // Pastikan tidak melebihi 650 karakter agar aman dari batas 1200 TPM Free Tier Groq Orpheus
+            let safeText = text.count > 650 ? VoiceText.spokenResponse(from: text, maxLength: 650) : text
+
             let payload: [String: Any] = [
                 "model": cleanModel,
-                "input": text,
+                "input": safeText,
                 "voice": cleanVoice,
                 "response_format": "wav"
             ]
@@ -243,8 +247,8 @@ final class HumanVoiceEngine: NSObject, AVAudioPlayerDelegate {
                 if statusCode == 200 {
                     ProviderRegistry.shared.reportSuccess(providerId: "groq", keySecret: key)
                     return data
-                } else if statusCode == 429 {
-                    // Rate limit: rotasi key otomatis
+                } else if statusCode == 429 || statusCode == 413 {
+                    // Rate limit atau TPM token limit: rotasi key otomatis
                     ProviderRegistry.shared.reportFailure(providerId: "groq", keySecret: key, isRateLimit: true)
                     continue
                 } else {

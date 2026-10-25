@@ -12,7 +12,7 @@ Transformasi Coucou (NotchBuddy) dari remote-control Claude Code menjadi autonom
 
 - Swift 6, SwiftUI + AppKit, zero third-party dependency (kecuali benar-benar tak terhindarkan).
 - Secrets hanya di Keychain. Tidak ada telemetry. Network hanya ke service yang dikonfigurasi user.
-- Bundle ID `fr.louisraille.NotchBuddy` tidak berubah.
+- Bundle ID `id.pcstudio.mochi` tidak berubah.
 - Jangan pernah blokir Claude Code: kalau app tidak menjawab, hook langsung exit.
 - Jangan pernah overwrite `~/.claude/settings.json`: backup bertanggal, merge, tampilkan diff, tulis hanya setelah user konfirmasi.
 - 0 % CPU saat island hidden.

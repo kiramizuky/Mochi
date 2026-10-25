@@ -96,6 +96,9 @@ public final class VoiceDuplexEngine: ObservableObject {
 
     /// Analisis VAD di thread audio tanpa memblokir MainActor
     nonisolated private static func analyzeBufferNonisolated(_ buffer: AVAudioPCMBuffer) {
+        // Cegah echo speaker memotong suara asisten sendiri saat asisten sedang berbicara
+        guard !VoiceManager.isMutedForOutput else { return }
+
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let frames = buffer.frameLength
         guard frames > 0 else { return }
@@ -119,6 +122,7 @@ public final class VoiceDuplexEngine: ObservableObject {
 
     /// Dieksekusi di MainActor untuk menghentikan TTS dan memulai mendengarkan pengguna
     public func triggerBargeInIfSpeaking() {
+        guard !VoiceManager.isMutedForOutput else { return }
         let now = Date()
         guard now.timeIntervalSince(lastBargeInTime) > 1.2 else { return }
         guard VoiceManager.shared.isSpeaking else { return }

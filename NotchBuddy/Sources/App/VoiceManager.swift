@@ -107,7 +107,10 @@ final class VoiceManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegat
 
     func speak(_ markdown: String) {
         guard speakAnswers else { return }
-        let text = VoiceText.spokenResponse(from: markdown)
+        stopSpeaking()
+
+        let limit = (ttsEngine == .groq) ? 650 : 3000
+        let text = VoiceText.spokenResponse(from: markdown, maxLength: limit)
         guard !text.isEmpty else { return }
 
         // 1. Matikan input mic dan batalkan proses commit agar suara AI tidak dijawab sendiri
@@ -120,8 +123,6 @@ final class VoiceManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegat
 
         endAudioOnly()
         wakeListening = false
-
-        stopSpeaking()
 
         if ttsEngine != .system {
             HumanVoiceEngine.shared.speak(

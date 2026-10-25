@@ -28,5 +28,5 @@ cd NotchBuddy && xcodegen && xcodebuild -scheme NotchBuddy -configuration Debug 
   target, decision, exit code). Review the audit log to inspect past actions; change the policy mode in
   Settings to tighten or loosen consent.
 - Performance: 0 % CPU when the island is hidden.
-- Keep the bundle identifier `fr.louisraille.NotchBuddy` (Keychain items, preferences and permissions depend on it).
+- Keep the bundle identifier `id.pcstudio.mochi` (Keychain items, preferences and permissions depend on it).
 - Visual changes must match the prototype and the screenshots in `design/captures/`.

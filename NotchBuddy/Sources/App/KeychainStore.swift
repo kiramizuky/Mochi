@@ -5,7 +5,7 @@ import Security
 
 enum Keychain {
     static let service = "id.pcstudio.mochi"
-    private static let legacyService = "fr.louisraille.NotchBuddy"
+    private static let legacyService = "id.pcstudio.mochi"
 
     static func save(key: String, value: String) {
         guard let data = value.data(using: .utf8) else { return }
@@ -45,7 +45,7 @@ enum Keychain {
             return str
         }
 
-        // Fallback migrasi jika ada key lama di bawah fr.louisraille.NotchBuddy
+        // Fallback migrasi jika ada key lama di bawah id.pcstudio.mochi
         let legacyQuery: [String: Any] = [
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrService as String: legacyService,
