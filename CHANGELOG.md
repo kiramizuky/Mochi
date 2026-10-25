@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Groq AI Provider & Multi-Key Pool**: Added full support for Groq AI (`openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, etc.) with streaming SSE and automatic multi-key rotation on HTTP 429 rate limits.
+- **Groq Orpheus TTS with Auto-Rotation**: Added ultra-fast text-to-speech using Canopy Labs Orpheus models (`canopylabs/orpheus-v1-english`, `canopylabs/orpheus-arabic-saudi`) with multi-key failover and selectable voice personas (`troy`, `orla`, `autumn`, `austin`, `shelby`).
 - Compact island on screens without a notch (#22) — thanks @Kamasoutra
 - Only web links (http/https) open from the notch; other kinds of links from Claude or integrations are ignored (#16) — thanks @Cris1670
 - Hook socket limited to your own user account, with size and time limits; logs no longer keep commands, n8n data or full URLs, and stay under 1 MB (#16) — thanks @Cris1670 and @Vignesh-Thangamariappan

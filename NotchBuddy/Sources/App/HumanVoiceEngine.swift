@@ -6,6 +6,7 @@ enum TTSEngineType: String, CaseIterable, Identifiable, Sendable {
     case system = "system"
     case openAI = "openai"
     case elevenLabs = "elevenlabs"
+    case groq = "groq"
 
     var id: String { rawValue }
     var displayName: String {
@@ -13,6 +14,7 @@ enum TTSEngineType: String, CaseIterable, Identifiable, Sendable {
         case .system: return "Apple System (Offline)"
         case .openAI: return "OpenAI TTS (Human Mode)"
         case .elevenLabs: return "ElevenLabs (Ultra-Realistic)"
+        case .groq: return "Groq Orpheus TTS (Ultra-Fast)"
         }
     }
 }
@@ -23,6 +25,7 @@ final class HumanVoiceEngine: NSObject, AVAudioPlayerDelegate {
     static let shared = HumanVoiceEngine()
 
     private var activePlayer: AVAudioPlayer?
+    private var tempAudioFileURL: URL?
     private(set) var isPlaying: Bool = false
 
     var onPlaybackFinished: (() -> Void)?
@@ -38,6 +41,8 @@ final class HumanVoiceEngine: NSObject, AVAudioPlayerDelegate {
         engine: TTSEngineType,
         openAIVoice: String = "nova",
         elevenLabsVoiceId: String = "21m00Tcm4TlvDq8ikWAM",
+        groqVoice: String = "autumn",
+        groqModel: String = "canopylabs/orpheus-v1-english",
         fallback: @escaping () -> Void
     ) {
         stop()
@@ -47,17 +52,23 @@ final class HumanVoiceEngine: NSObject, AVAudioPlayerDelegate {
         Task {
             do {
                 let audioData: Data
+                let format: String
                 switch engine {
                 case .openAI:
                     audioData = try await fetchOpenAIAudio(text: text, voice: openAIVoice)
+                    format = "mp3"
                 case .elevenLabs:
                     audioData = try await fetchElevenLabsAudio(text: text, voiceId: elevenLabsVoiceId)
+                    format = "mp3"
+                case .groq:
+                    audioData = try await fetchGroqAudio(text: text, voice: groqVoice, model: groqModel)
+                    format = "wav"
                 case .system:
                     fallback()
                     return
                 }
 
-                try playAudioData(audioData)
+                try playAudioData(audioData, format: format)
             } catch {
                 print("⚠️ [HumanVoiceEngine] Generative TTS failed, falling back to system TTS: \(error.localizedDescription)")
                 fallback()
@@ -71,12 +82,26 @@ final class HumanVoiceEngine: NSObject, AVAudioPlayerDelegate {
         }
         activePlayer = nil
         isPlaying = false
+        if let url = tempAudioFileURL {
+            try? FileManager.default.removeItem(at: url)
+            tempAudioFileURL = nil
+        }
     }
 
     // MARK: - Audio Playback
 
-    private func playAudioData(_ data: Data) throws {
-        let player = try AVAudioPlayer(data: data)
+    private func playAudioData(_ data: Data, format: String = "wav") throws {
+        if let old = tempAudioFileURL {
+            try? FileManager.default.removeItem(at: old)
+            tempAudioFileURL = nil
+        }
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mochi_speech_\(UUID().uuidString).\(format)")
+        try data.write(to: tempURL)
+        self.tempAudioFileURL = tempURL
+
+        let player = try AVAudioPlayer(contentsOf: tempURL)
         player.delegate = self
         player.volume = 0.95
         player.prepareToPlay()
@@ -89,6 +114,10 @@ final class HumanVoiceEngine: NSObject, AVAudioPlayerDelegate {
         Task { @MainActor in
             self.isPlaying = false
             self.activePlayer = nil
+            if let url = self.tempAudioFileURL {
+                try? FileManager.default.removeItem(at: url)
+                self.tempAudioFileURL = nil
+            }
             self.onPlaybackFinished?()
         }
     }
@@ -168,5 +197,64 @@ final class HumanVoiceEngine: NSObject, AVAudioPlayerDelegate {
         }
 
         return data
+    }
+
+    // MARK: - Groq TTS API (Canopy Labs Orpheus with Multi-Key Rotation)
+
+    private func fetchGroqAudio(text: String, voice: String = "autumn", model: String = "canopylabs/orpheus-v1-english") async throws -> Data {
+        let maxRetries = 3
+        var lastError: Error?
+
+        for _ in 1...maxRetries {
+            let key = ProviderRegistry.shared.key(for: "groq")
+                ?? KeychainStore.shared.get("groq-api-key")
+                ?? ""
+
+            guard !key.isEmpty else {
+                throw NSError(domain: "HumanVoiceEngine", code: 401, userInfo: [NSLocalizedDescriptionKey: "Groq API key missing. Tambahkan di Settings > AI Provider > Groq."])
+            }
+
+            guard let url = URL(string: "https://api.groq.com/openai/v1/audio/speech") else {
+                throw URLError(.badURL)
+            }
+
+            var request = URLRequest(url: url, timeoutInterval: 15)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            let cleanVoice = voice.isEmpty ? "autumn" : voice.lowercased()
+            let cleanModel = model.isEmpty ? "canopylabs/orpheus-v1-english" : model
+
+            let payload: [String: Any] = [
+                "model": cleanModel,
+                "input": text,
+                "voice": cleanVoice,
+                "response_format": "wav"
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+                if statusCode == 200 {
+                    ProviderRegistry.shared.reportSuccess(providerId: "groq", keySecret: key)
+                    return data
+                } else if statusCode == 429 {
+                    // Rate limit: rotasi key otomatis
+                    ProviderRegistry.shared.reportFailure(providerId: "groq", keySecret: key, isRateLimit: true)
+                    continue
+                } else {
+                    ProviderRegistry.shared.reportFailure(providerId: "groq", keySecret: key, isRateLimit: false)
+                    let errorMsg = String(data: data, encoding: .utf8) ?? "HTTP \(statusCode)"
+                    throw NSError(domain: "HumanVoiceEngine", code: statusCode, userInfo: [NSLocalizedDescriptionKey: errorMsg])
+                }
+            } catch {
+                lastError = error
+            }
+        }
+
+        throw lastError ?? NSError(domain: "HumanVoiceEngine", code: 429, userInfo: [NSLocalizedDescriptionKey: "Groq TTS rate limit reached across available keys."])
     }
 }

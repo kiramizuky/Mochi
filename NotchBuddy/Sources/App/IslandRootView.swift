@@ -74,11 +74,10 @@ struct IslandContainer: View {
                             .frame(width: islandWidth, height: islandHeight)
                             .clipShape(IslandShape(width: islandWidth, height: islandHeight,
                                                   cornerRadius: cornerRadius, topRadius: islandTopRadius))
-                        // Header overlaid: canvas CARD_Y=42 aligns exactly with header bottom,
-                        // matching normal view proportions (8pt top + 34pt header + card + 10pt bottom).
+                        // Header overlaid: aligns with card below
                         IslandHeader(state: state)
-                            .frame(width: islandWidth, height: 34)
-                            .offset(y: 8)
+                            .frame(width: islandWidth, height: 28)
+                            .offset(y: 14)
                     }
                     .transition(.opacity)
                 } else {
@@ -370,10 +369,10 @@ func botPosition(mode: IslandMode, view: IslandView, islandW: CGFloat, islandH: 
         if let fixedY = layout.botY {
             cy = fixedY
         } else {
-            // Center of the fixed 84pt card (VStack top=8, header=34 → content starts at y=42)
-            let headerBottom: CGFloat = 42
-            let cardH: CGFloat = 84
-            cy = headerBottom + (islandH - headerBottom - cardH) / 2 + cardH / 2
+            // Center of the fixed 98pt card (VStack top=16, header=28, spacing=6 → card starts at y=50)
+            let cardTop: CGFloat = 50
+            let cardH: CGFloat = 98
+            cy = cardTop + (islandH - cardTop - 12 - cardH) / 2 + cardH / 2
         }
         return (cx, cy, diameter, 1)
     }
@@ -438,9 +437,9 @@ struct IslandContentView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 6) {
             IslandHeader(state: state)
-                .frame(height: 34)
+                .frame(height: 28)
                 .opacity(state.view == .confused ? 0 : 1)
                 .animation(.easeInOut(duration: 0.2), value: state.view == .confused)
 
@@ -467,8 +466,8 @@ struct IslandContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 10)
         }
-        .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
         .foregroundColor(Color(hex: "#F5F6F8"))
     }
 }
@@ -499,6 +498,7 @@ struct IslandHeader: View {
             // Right: action icons
             HStack(spacing: 14) {
                 Button(action: {
+                    state.lastActivity = .now
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         state.view = .settings
                     }
@@ -509,7 +509,10 @@ struct IslandHeader: View {
                 }
                 .buttonStyle(.plain)
 
-                Button(action: { state.soundEnabled.toggle() }) {
+                Button(action: {
+                    state.lastActivity = .now
+                    state.soundEnabled.toggle()
+                }) {
                     Image(systemName: state.soundEnabled ? "speaker.wave.2" : "speaker.slash")
                         .font(.system(size: 14))
                         .foregroundColor(Color(hex: "#8E939C"))
@@ -536,6 +539,7 @@ struct TabButton: View {
 
     var body: some View {
         Button(action: {
+            state.lastActivity = .now
             preAction?()
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 state.view = view

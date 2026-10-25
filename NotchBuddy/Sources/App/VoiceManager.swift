@@ -31,6 +31,12 @@ final class VoiceManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegat
     @Published var elevenLabsVoiceId: String = UserDefaults.standard.string(forKey: "elevenLabsVoiceId") ?? "21m00Tcm4TlvDq8ikWAM" {
         didSet { UserDefaults.standard.set(elevenLabsVoiceId, forKey: "elevenLabsVoiceId") }
     }
+    @Published var groqVoice: String = UserDefaults.standard.string(forKey: "groqVoice") ?? "autumn" {
+        didSet { UserDefaults.standard.set(groqVoice, forKey: "groqVoice") }
+    }
+    @Published var groqModel: String = UserDefaults.standard.string(forKey: "groqModel") ?? "canopylabs/orpheus-v1-english" {
+        didSet { UserDefaults.standard.set(groqModel, forKey: "groqModel") }
+    }
 
     // MARK: PTT & Hands-Free state
 
@@ -115,7 +121,9 @@ final class VoiceManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegat
                 text: text,
                 engine: ttsEngine,
                 openAIVoice: openAIVoice,
-                elevenLabsVoiceId: elevenLabsVoiceId
+                elevenLabsVoiceId: elevenLabsVoiceId,
+                groqVoice: groqVoice,
+                groqModel: groqModel
             ) { [weak self] in
                 self?.speakSystem(text)
             }

@@ -17,6 +17,7 @@ final class IslandWindowController: NSWindowController {
     private var keyMonitor: Any?
     private var viewSubscription: AnyCancellable?
     private var modeSubscription: AnyCancellable?
+    private var autoCloseSubscription: AnyCancellable?
 
     // Confused recovery timer (set by handleDizzy)
     private var confusedRecoveryTimer: DispatchWorkItem?
@@ -162,6 +163,16 @@ final class IslandWindowController: NSWindowController {
                 guard let self else { return }
                 self.updatePollingRate()
             }
+
+        // Keep FSM auto-close delay in sync with AppState and reset activity timer on interval change
+        fsm.homeToPetitDelay = state.autoCloseInterval
+        autoCloseSubscription = state.$autoCloseInterval
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] interval in
+                guard let self else { return }
+                self.fsm.homeToPetitDelay = interval
+                self.state.lastActivity = .now
+            }
     }
 
     // MARK: - FSM wiring
@@ -292,6 +303,25 @@ final class IslandWindowController: NSWindowController {
             fsm.mouseLeft()
         }
         wasInIsland = inIsland
+
+        // Track user interaction inside the island to refresh lastActivity
+        if inIsland {
+            let m = NSEvent.mouseLocation
+            let dist = hypot(m.x - lastMouse.x, m.y - lastMouse.y)
+            if dist > 3 {
+                state.lastActivity = .now
+                lastMouse = m
+            }
+        }
+
+        // Auto-close check (matches prototype line 892:
+        // if expanded and not pinned and now - lastActivity > autoClose, collapse)
+        if state.mode == .expanded && !state.isPinned && !inAttachDrag && !state.fileDragOver {
+            let elapsed = Date.now.timeIntervalSince(state.lastActivity)
+            if elapsed >= state.autoCloseInterval {
+                collapse()
+            }
+        }
 
         // Bot-head hover (love emote)
         let overBot = state.mode == .expanded && state.stateOverride == nil && isBotHit(local)

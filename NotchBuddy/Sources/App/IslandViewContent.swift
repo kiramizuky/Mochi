@@ -806,6 +806,9 @@ struct PromptView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .focused($focused)
+                        .onChange(of: text) { _, _ in
+                            state.lastActivity = .now
+                        }
                         .onChange(of: state.promptPrefill) { _, newValue in
                             if let newValue, text.isEmpty { text = newValue }
                         }
@@ -2886,9 +2889,28 @@ struct SettingsIslandView: View {
                 }
 
                 // Connection status
-                HStack(spacing: 14) {
-                    StatusBadge(label: "Claude Code", ok: claudeConnected)
-                    StatusBadge(label: "API", ok: apiConnected)
+                HStack(spacing: 12) {
+                    Button(action: {
+                        NotificationCenter.default.post(name: .openFullSettings, object: nil)
+                    }) {
+                        StatusBadge(
+                            label: claudeConnected ? "Claude Code" : "Claude (Not Linked)",
+                            status: claudeConnected ? .active : .inactive
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    let activeProv = ProviderRegistry.shared.activeProvider
+                    Button(action: {
+                        NotificationCenter.default.post(name: .openFullSettings, object: nil)
+                    }) {
+                        StatusBadge(
+                            label: "\(activeProv.displayName) API",
+                            status: apiConnected ? .active : .warning
+                        )
+                    }
+                    .buttonStyle(.plain)
+
                     Spacer()
                     Button("Settings…") {
                         NotificationCenter.default.post(name: .openFullSettings, object: nil)
@@ -2906,17 +2928,39 @@ struct SettingsIslandView: View {
 }
 
 struct StatusBadge: View {
+    enum Status {
+        case active, inactive, warning, error
+        var color: Color {
+            switch self {
+            case .active:   return Color(hex: "#22C55E")
+            case .inactive: return Color(hex: "#6B7079")
+            case .warning:  return Color(hex: "#F59E0B")
+            case .error:    return Color(hex: "#F4505E")
+            }
+        }
+    }
+
     let label: String
-    let ok: Bool
+    var status: Status = .inactive
+
+    init(label: String, status: Status) {
+        self.label = label
+        self.status = status
+    }
+
+    init(label: String, ok: Bool) {
+        self.label = label
+        self.status = ok ? .active : .inactive
+    }
 
     var body: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(ok ? Color(hex: "#22C55E") : Color(hex: "#F4505E"))
+                .fill(status.color)
                 .frame(width: 6, height: 6)
             Text(label)
                 .font(.system(size: 11))
-                .foregroundColor(Color(hex: "#8E939C"))
+                .foregroundColor(status == .active ? Color(hex: "#A0A5AE") : Color(hex: "#7A7F88"))
         }
     }
 }

@@ -38,6 +38,7 @@ struct SettingsView: View {
         switch selectedProviderId {
         case "openai": return "API key (sk-…)"
         case "gemini": return "API key (AIza…)"
+        case "groq":   return "API key (gsk_…)"
         default:       return "API key (sk-ant-…)"
         }
     }
@@ -481,6 +482,36 @@ struct SettingsView: View {
                                             .frame(maxWidth: 220)
                                     }
                                     Text("Model eleven_flash_v2_5 untuk latensi super rendah.")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            } else if voice.ttsEngine == .groq {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 8) {
+                                        Text("Model TTS:")
+                                            .font(.system(size: 11))
+                                        Picker("", selection: $voice.groqModel) {
+                                            Text("Orpheus English (canopylabs)").tag("canopylabs/orpheus-v1-english")
+                                            Text("Orpheus Arabic Saudi (canopylabs)").tag("canopylabs/orpheus-arabic-saudi")
+                                        }
+                                        .pickerStyle(.menu)
+                                        .frame(maxWidth: 240)
+                                    }
+                                    HStack(spacing: 8) {
+                                        Text("Pilihan Suara:")
+                                            .font(.system(size: 11))
+                                        Picker("", selection: $voice.groqVoice) {
+                                            Text("Autumn (Warm & Natural - Default)").tag("autumn")
+                                            Text("Troy (Male / Natural)").tag("troy")
+                                            Text("Orla (Female / Expressive)").tag("orla")
+                                            Text("Austin (Confident)").tag("austin")
+                                            Text("Shelby (Gentle)").tag("shelby")
+                                        }
+                                        .pickerStyle(.menu)
+                                        .frame(maxWidth: 240)
+                                    }
+                                    Text("Menggunakan Groq TTS (Canopy Labs Orpheus) dengan auto-rotate Multi-Key saat limit kuota tercapai.")
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)

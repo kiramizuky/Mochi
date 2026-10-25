@@ -53,6 +53,9 @@ final class ProviderRegistry: @unchecked Sendable {
         register(GeminiProvider(keyProvider: { [weak self] in
             self?.key(for: "gemini")
         }))
+        register(GroqProvider(keyProvider: { [weak self] in
+            self?.key(for: "groq")
+        }))
         register(LocalSLMProvider())
 
         migrateLegacyKeysIfNeeded()
@@ -244,7 +247,7 @@ final class ProviderRegistry: @unchecked Sendable {
     }
 
     private func migrateLegacyKeysIfNeeded() {
-        for providerId in ["anthropic", "openai", "gemini"] {
+        for providerId in ["anthropic", "openai", "gemini", "groq"] {
             let existing = keys(for: providerId)
             if existing.isEmpty,
                let legacyKey = KeychainStore.shared.get("\(providerId)-api-key"),
