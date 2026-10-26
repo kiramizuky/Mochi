@@ -14,7 +14,7 @@ use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
-const AUDIT_SECRET_KEY: &str = "coucou-audit-hmac";
+const AUDIT_SECRET_KEY: &str = "mochi-audit-hmac";
 const MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
 const INITIAL_PREV_MAC: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
@@ -196,7 +196,7 @@ pub fn record(entry: &AuditEntry) {
     let path = current_audit_file();
     if let Ok(meta) = fs::metadata(&path) {
         if meta.len() >= MAX_FILE_SIZE_BYTES {
-            eprintln!("[coucou::audit] audit log reached 10 MB limit");
+            eprintln!("[mochi::audit] audit log reached 10 MB limit");
             return;
         }
     }

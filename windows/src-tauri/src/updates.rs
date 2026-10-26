@@ -58,7 +58,7 @@ pub async fn check(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
 pub async fn install(app: AppHandle) -> Result<(), String> {
     let updater = build(&app, INSTALL_TIMEOUT)?;
     let Some(update) = updater.check().await.map_err(error)? else {
-        return Err("Coucou is already up to date.".into());
+        return Err("Mochi is already up to date.".into());
     };
     let version = update.version.clone();
     log::line(format!("updating to {version}"));

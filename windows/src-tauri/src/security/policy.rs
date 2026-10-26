@@ -343,7 +343,7 @@ pub fn load() -> (PolicyFile, bool) {
         Ok(policy) => {
             if policy.schema_version != SCHEMA_VERSION {
                 eprintln!(
-                    "[coucou::security] unknown schemaVersion {}",
+                    "[mochi::security] unknown schemaVersion {}",
                     policy.schema_version
                 );
                 return (PolicyFile::default(), true);
@@ -351,7 +351,7 @@ pub fn load() -> (PolicyFile, bool) {
             (policy, false)
         }
         Err(err) => {
-            eprintln!("[coucou::security] corrupt policy file: {err}");
+            eprintln!("[mochi::security] corrupt policy file: {err}");
             (PolicyFile::default(), true)
         }
     }

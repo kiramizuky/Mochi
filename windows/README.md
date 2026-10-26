@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="src-tauri/icons/128x128.png" width="96" alt="Coucou icon">
+<img src="src-tauri/icons/128x128.png" width="96" alt="Mochi icon">
 
-# Coucou for Windows
+# Mochi for Windows
 
 **Mochi doesn't get a notch on a PC — so it lives at the top of your screen instead.**
 
@@ -168,8 +168,8 @@ verify the published installer against the embedded minisign key.
 running it locally. `scripts/smoke-app.ps1` launches the app with
 `COUCOU_SMOKE_TEST=1`, waits for nine runtime checks and exits non-zero if any
 fails. Both expect the release relay from `npm run build`; the app smoke test
-also needs `target\release\coucou.exe`, built with
-`cargo build --release -p coucou --features custom-protocol` (a bare
+also needs `target\release\mochi.exe`, built with
+`cargo build --release -p mochi --features custom-protocol` (a bare
 `cargo build --release` builds Tauri in dev mode, so it would not exercise the
 embedded front end).
 
@@ -188,16 +188,16 @@ otherwise needs a real drag from Explorer to see. Neither page ships in the app.
 workflow publishes:
 
 ```
-Coucou-Windows-X.Y.Z-setup.exe         the versioned installer
-Coucou-Windows-X.Y.Z-setup.exe.sha256  SHA-256 of the versioned installer
-Coucou-Windows-setup.exe               the same file under the rolling name
+Mochi-Windows-X.Y.Z-setup.exe         the versioned installer
+Mochi-Windows-X.Y.Z-setup.exe.sha256  SHA-256 of the versioned installer
+Mochi-Windows-setup.exe               the same file under the rolling name
 ```
 
 When the build was produced with `tauri.release.conf.json` and the updater key
 (`TAURI_SIGNING_PRIVATE_KEY`), `pack.mjs` also copies the updater signature:
 
 ```
-Coucou-Windows-X.Y.Z-setup.exe.sig     minisign signature for the update manifest
+Mochi-Windows-X.Y.Z-setup.exe.sig     minisign signature for the update manifest
 ```
 
 It only copies a signature that is newer than the installer and bound to the

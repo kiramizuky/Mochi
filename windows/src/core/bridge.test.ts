@@ -10,7 +10,7 @@ describe("bridge outside Tauri", () => {
   });
 
   it("still rejects for the calls the UI must show an error for", async () => {
-    await expect(Bridge.hooksPreview(true)).rejects.toThrow("not running inside Coucou");
+    await expect(Bridge.hooksPreview(true)).rejects.toThrow("not running inside Mochi");
     await expect(Bridge.hooksApply(true, "abc")).rejects.toThrow();
     await expect(Bridge.chatSend("hi", null)).rejects.toThrow();
     await expect(Bridge.ingestFile("C:\\tmp\\a.txt")).rejects.toThrow();

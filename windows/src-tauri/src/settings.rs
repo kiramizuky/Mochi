@@ -115,20 +115,30 @@ impl Default for Settings {
     }
 }
 
-/// %APPDATA%\Coucou
+/// %APPDATA%\Mochi (or legacy %APPDATA%\Coucou if present)
 pub fn config_dir() -> PathBuf {
     let base = std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("Coucou")
+    let mochi = base.join("Mochi");
+    let legacy = base.join("Coucou");
+    if !mochi.exists() && legacy.exists() {
+        return legacy;
+    }
+    mochi
 }
 
-/// %LOCALAPPDATA%\Coucou — where coucou-hook.exe and the log live.
+/// %LOCALAPPDATA%\Mochi — where coucou-hook.exe and the log live.
 pub fn local_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("Coucou")
+    let mochi = base.join("Mochi");
+    let legacy = base.join("Coucou");
+    if !mochi.exists() && legacy.exists() {
+        return legacy;
+    }
+    mochi
 }
 
 pub fn hook_exe_path() -> PathBuf {

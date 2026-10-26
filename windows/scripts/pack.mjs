@@ -31,8 +31,8 @@ const built = installers
   .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 
 mkdirSync(outDir, { recursive: true });
-const versioned = join(outDir, `Coucou-Windows-${version}-setup.exe`);
-const rolling = join(outDir, "Coucou-Windows-setup.exe");
+const versioned = join(outDir, `Mochi-Windows-${version}-setup.exe`);
+const rolling = join(outDir, "Mochi-Windows-setup.exe");
 copyFileSync(built, versioned);
 copyFileSync(built, rolling);
 
@@ -89,8 +89,8 @@ if (!sigCopied) {
 // Signed installers come from the release workflow; a local `npm run pack`
 // still produces an unsigned installer for development.
 const digest = createHash("sha256").update(readFileSync(versioned)).digest("hex");
-const checksum = join(outDir, `Coucou-Windows-${version}-setup.exe.sha256`);
-writeFileSync(checksum, `${digest}  Coucou-Windows-${version}-setup.exe\n`, "utf8");
+const checksum = join(outDir, `Mochi-Windows-${version}-setup.exe.sha256`);
+writeFileSync(checksum, `${digest}  Mochi-Windows-${version}-setup.exe\n`, "utf8");
 
 const mb = (statSync(versioned).size / 1024 / 1024).toFixed(2);
 console.log(`\n  Installer ready — ${mb} MB\n`);

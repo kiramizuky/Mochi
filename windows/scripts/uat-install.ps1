@@ -27,7 +27,7 @@ function Get-CoucouUninstallEntry {
   if (-not (Test-Path $root)) { return $null }
   Get-ChildItem $root | ForEach-Object {
     $item = Get-ItemProperty $_.PSPath
-    if ($item.DisplayName -like "Coucou*") { $item }
+    if ($item.DisplayName -like "Mochi*" -or $item.DisplayName -like "Coucou*") { $item }
   } | Select-Object -First 1
 }
 
@@ -37,8 +37,10 @@ function Get-InstalledExe([string]$EntryPath) {
   # versions; a quoted path is still a path, not a drive called '"C'.
   $location = ([string]$item.InstallLocation).Trim().Trim('"')
   if ($location) {
-    $candidate = Join-Path $location "coucou.exe"
+    $candidate = Join-Path $location "mochi.exe"
     if (Test-Path $candidate) { return $candidate }
+    $legacy = Join-Path $location "coucou.exe"
+    if (Test-Path $legacy) { return $legacy }
   }
   $icon = ([string]$item.DisplayIcon).Trim().Trim('"') -replace ',\d+$', ''
   if ($icon -and (Test-Path $icon)) { return $icon }
@@ -64,8 +66,8 @@ if ($existing) {
 }
 
 if (-not $Installer) {
-  $candidate = Get-ChildItem (Join-Path $PSScriptRoot "..\release") -Filter "Coucou-Windows-*-setup.exe" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^Coucou-Windows-\d+\.\d+\.\d+-setup\.exe$' } |
+  $candidate = Get-ChildItem (Join-Path $PSScriptRoot "..\release") -Filter "*-Windows-*-setup.exe" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^(?:Mochi|Coucou)-Windows-\d+\.\d+\.\d+-setup\.exe$' } |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1
   if (-not $candidate) { throw "No versioned installer in windows\release. Run: npm run pack" }
@@ -75,16 +77,16 @@ if (-not (Test-Path $Installer)) { throw "Installer not found: $Installer" }
 $installerPath = (Resolve-Path $Installer).Path
 
 $name = Split-Path $installerPath -Leaf
-if ($name -notmatch '^Coucou-Windows-(?<version>\d+\.\d+\.\d+)-setup\.exe$') {
-  throw "Expected a versioned installer named Coucou-Windows-<version>-setup.exe, got $name"
+if ($name -notmatch '^(?:Mochi|Coucou)-Windows-(?<version>\d+\.\d+\.\d+)-setup\.exe$') {
+  throw "Expected a versioned installer named Mochi-Windows-<version>-setup.exe (or Coucou-Windows-<version>-setup.exe), got $name"
 }
 $expectedVersion = $Matches.version
 
 $claudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"
 $claudeBefore = if (Test-Path $claudeSettings) { (Get-FileHash $claudeSettings -Algorithm SHA256).Hash } else { $null }
-$prefs = Join-Path $env:APPDATA "Coucou\settings.json"
+$prefs = if (Test-Path (Join-Path $env:APPDATA "Mochi\settings.json")) { Join-Path $env:APPDATA "Mochi\settings.json" } else { Join-Path $env:APPDATA "Coucou\settings.json" }
 $prefsBefore = if (Test-Path $prefs) { (Get-FileHash $prefs -Algorithm SHA256).Hash } else { $null }
-$local = Join-Path $env:LOCALAPPDATA "Coucou"
+$local = if (Test-Path (Join-Path $env:LOCALAPPDATA "Mochi")) { Join-Path $env:LOCALAPPDATA "Mochi" } else { Join-Path $env:LOCALAPPDATA "Coucou" }
 
 $installed = $false
 $entryPath = $null
@@ -154,10 +156,10 @@ try {
     if ($stillInstalled) { Start-Sleep -Milliseconds 250 }
   } while ($stillInstalled -and (Get-Date) -lt $deadline)
   if (Get-CoucouUninstallEntry) { throw "The uninstall registry entry survived" }
-  if (Test-Path $exe) { throw "coucou.exe survived the uninstall" }
+  if (Test-Path $exe) { throw "$exe survived the uninstall" }
   $installed = $false
 
-  foreach ($disposable in @("bin", "inbox", "crashes", "coucou.log", "coucou.log.1", "coucou-log-export.txt")) {
+  foreach ($disposable in @("bin", "inbox", "crashes", "audit", "mochi.log", "mochi.log.1", "mochi-log-export.txt", "coucou.log", "coucou.log.1", "coucou-log-export.txt")) {
     $path = Join-Path $local $disposable
     if (Test-Path $path) { throw "Disposable data survived the uninstall: $path" }
   }

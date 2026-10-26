@@ -310,10 +310,10 @@ fn island_geometry(app: &AppHandle) -> Check {
 }
 
 fn tray_icon(app: &AppHandle) -> Check {
-    if app.tray_by_id("coucou").is_some() {
+    if app.tray_by_id("mochi").is_some() || app.tray_by_id("coucou").is_some() {
         Check::pass("tray_icon", "notification-area icon registered")
     } else {
-        Check::fail("tray_icon", "no tray icon with id \"coucou\"")
+        Check::fail("tray_icon", "no tray icon with id \"mochi\"")
     }
 }
 

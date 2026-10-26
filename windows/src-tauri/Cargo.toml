@@ -1,13 +1,13 @@
 [package]
-name = "coucou"
-description = "Coucou for Windows — Mochi lives at the top of your screen"
+name = "mochi"
+description = "Mochi for Windows — Mochi lives at the top of your screen"
 authors = ["Louis Raille"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "coucou_lib"
+name = "mochi_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]

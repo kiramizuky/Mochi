@@ -28,7 +28,7 @@ function missingSounds(): string[] {
 function sharedSounds(): Plugin {
   const prefix = "/sounds/";
   return {
-    name: "coucou-shared-sounds",
+    name: "mochi-shared-sounds",
     configureServer(server) {
       const missing = missingSounds();
       if (missing.length) {

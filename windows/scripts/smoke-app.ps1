@@ -14,7 +14,7 @@
 # desktop both work; close Coucou first.
 
 param(
-  [string]$App = "target\release\coucou.exe",
+  [string]$App,
   [int]$TimeoutSec = 90,
   [switch]$KeepReport
 )
@@ -24,14 +24,24 @@ $ErrorActionPreference = "Stop"
 # a Unicode name and its report is JSON, so print it as UTF-8.
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
+if (-not $App) {
+  if (Test-Path "target\release\mochi.exe") {
+    $App = "target\release\mochi.exe"
+  } elseif (Test-Path "target\release\coucou.exe") {
+    $App = "target\release\coucou.exe"
+  } else {
+    $App = "target\release\mochi.exe"
+  }
+}
+
 if (-not (Test-Path $App)) {
-  throw "$App not found. Run: npm run build; cargo build --release -p coucou --features custom-protocol"
+  throw "$App not found. Run: npm run build; cargo build --release -p mochi --features custom-protocol"
 }
 $appPath = (Resolve-Path $App).Path
 
-$running = Get-Process -Name coucou -ErrorAction SilentlyContinue
+$running = Get-Process -Name mochi, coucou -ErrorAction SilentlyContinue
 if ($running) {
-  throw "Coucou is already running (PID $($running.Id -join ', ')). Close it before the smoke test."
+  throw "Mochi is already running (PID $($running.Id -join ', ')). Close it before the smoke test."
 }
 
 $reportPath = Join-Path ([System.IO.Path]::GetTempPath()) "coucou-smoke-$PID.json"
@@ -63,8 +73,9 @@ $stderrTask = $process.StandardError.ReadToEndAsync()
 if (-not $process.WaitForExit($TimeoutSec * 1000)) {
   try { $process.Kill($true) } catch { }
   $process.WaitForExit(5000) | Out-Null
-  Write-Host (Get-Content (Join-Path $env:LOCALAPPDATA "Coucou\coucou.log") -Tail 25 -ErrorAction SilentlyContinue)
-  throw "Coucou did not finish the smoke test within $TimeoutSec s"
+  $logPath = if (Test-Path (Join-Path $env:LOCALAPPDATA "Mochi\mochi.log")) { Join-Path $env:LOCALAPPDATA "Mochi\mochi.log" } else { Join-Path $env:LOCALAPPDATA "Coucou\coucou.log" }
+  Write-Host (Get-Content $logPath -Tail 25 -ErrorAction SilentlyContinue)
+  throw "Mochi did not finish the smoke test within $TimeoutSec s"
 }
 $watch.Stop()
 $exitCode = $process.ExitCode
@@ -74,13 +85,14 @@ $stderr = $stderrTask.Result.Trim()
 if (-not (Test-Path $reportPath)) {
   if ($stdout) { Write-Host $stdout }
   if ($stderr) { Write-Host $stderr }
-  Write-Host (Get-Content (Join-Path $env:LOCALAPPDATA "Coucou\coucou.log") -Tail 25 -ErrorAction SilentlyContinue)
-  throw "Coucou exited $exitCode without writing a smoke report"
+  $logPath = if (Test-Path (Join-Path $env:LOCALAPPDATA "Mochi\mochi.log")) { Join-Path $env:LOCALAPPDATA "Mochi\mochi.log" } else { Join-Path $env:LOCALAPPDATA "Coucou\coucou.log" }
+  Write-Host (Get-Content $logPath -Tail 25 -ErrorAction SilentlyContinue)
+  throw "Mochi exited $exitCode without writing a smoke report"
 }
 
 $report = Get-Content $reportPath -Raw | ConvertFrom-Json
 
-Write-Host "Coucou $($report.version) smoke test - $([math]::Round($report.duration_ms)) ms"
+Write-Host "Mochi $($report.version) smoke test - $([math]::Round($report.duration_ms)) ms"
 foreach ($check in $report.checks) {
   $mark = if ($check.ok) { "ok  " } else { "FAIL" }
   Write-Host ("  {0} {1,-18} {2}" -f $mark, $check.name, $check.detail)
@@ -90,8 +102,9 @@ $failed = @($report.checks | Where-Object { -not $_.ok })
 if ($exitCode -ne 0 -or -not $report.ok -or $failed.Count -gt 0) {
   if ($stdout) { Write-Host "stdout: $stdout" }
   if ($stderr) { Write-Host "stderr: $stderr" }
-  Write-Host (Get-Content (Join-Path $env:LOCALAPPDATA "Coucou\coucou.log") -Tail 40 -ErrorAction SilentlyContinue)
-  throw ("Coucou app smoke test failed ({0} checks)" -f $failed.Count)
+  $logPath = if (Test-Path (Join-Path $env:LOCALAPPDATA "Mochi\mochi.log")) { Join-Path $env:LOCALAPPDATA "Mochi\mochi.log" } else { Join-Path $env:LOCALAPPDATA "Coucou\coucou.log" }
+  Write-Host (Get-Content $logPath -Tail 40 -ErrorAction SilentlyContinue)
+  throw ("Mochi app smoke test failed ({0} checks)" -f $failed.Count)
 }
 
 if ($KeepReport) {

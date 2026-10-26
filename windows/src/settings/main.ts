@@ -69,7 +69,7 @@ function claudeSection(status: HookStatus): HTMLElement {
       h("div", {
         class: "hint",
         text: status.installed
-          ? "Coucou is hooked into your Claude Code sessions. Tool calls, questions and permission requests show up in the island, and you can answer them there."
+          ? "Mochi is hooked into your Claude Code sessions. Tool calls, questions and permission requests show up in the island, and you can answer them there."
           : "Install the hooks to see your Claude Code sessions in the island and approve permissions without leaving what you are doing.",
       }),
       h("div", { class: "row" },
@@ -86,7 +86,7 @@ function claudeSection(status: HookStatus): HTMLElement {
     if (!status.hookReady) {
       body.append(h("div", {
         class: "notice warn",
-        text: "coucou-hook.exe is not in place yet. Restart Coucou; if it still fails, build it with `cargo build -p coucou-hook`.",
+        text: "coucou-hook.exe is not in place yet. Restart Mochi; if it still fails, build it with `cargo build -p coucou-hook`.",
       }));
     }
 
@@ -137,7 +137,7 @@ function claudeSection(status: HookStatus): HTMLElement {
         class: "hint",
         text: install
           ? "This is exactly what will change in your settings.json. Your own hooks are left untouched."
-          : "This removes Coucou's entries only. Your own hooks are left untouched.",
+          : "This removes Mochi's entries only. Your own hooks are left untouched.",
       }),
       renderDiff(preview.diff),
       h("div", { class: "row" },
@@ -503,7 +503,7 @@ function welcomeSection(
   const section = h(
     "section",
     {},
-    h("h2", {}, h("span", { text: "Welcome to Coucou" })),
+    h("h2", {}, h("span", { text: "Welcome to Mochi" })),
     h("div", {
       class: "hint",
       text: "Three short steps and Mochi is ready. Everything can be changed later in this window.",
@@ -904,12 +904,12 @@ function updateSection(): HTMLElement {
     clear(feedback);
     clear(progress);
     setBusy(true, "Installing…");
-    progress.append(h("span", { text: `Preparing Coucou ${target}…` }));
+    progress.append(h("span", { text: `Preparing Mochi ${target}…` }));
     try {
       await Bridge.updatesInstall();
       // On Windows the app exits so the installer can replace the running
       // files, so this line is only reached if the install did not start.
-      notice("ok", "The installer has started. Coucou restarts when it finishes.");
+      notice("ok", "The installer has started. Mochi restarts when it finishes.");
     } catch (err) {
       clear(progress);
       notice("err", `Could not install the update: ${message(err)}`);
@@ -926,12 +926,12 @@ function updateSection(): HTMLElement {
     try {
       const info = await Bridge.updatesCheck();
       if (!info) {
-        notice("ok", `Coucou ${version || "is"} is up to date.`);
+        notice("ok", `Mochi ${version || "is"} is up to date.`);
         return;
       }
       feedback.append(
         h("div", { class: "notice ok" },
-          h("strong", { text: `Coucou ${info.version} is available` }),
+          h("strong", { text: `Mochi ${info.version} is available` }),
           info.date ? h("span", { text: ` — released ${info.date.slice(0, 10)}` }) : null,
           info.body ? h("div", { class: "hint", text: info.body }) : null,
         ),
@@ -966,7 +966,7 @@ function updateSection(): HTMLElement {
     h("h2", {}, h("span", { text: "Updates" })),
     h("div", {
       class: "hint",
-      text: "Updates come from signed GitHub Releases. Coucou checks the manifest, verifies the installer against its update key, and only installs after you click. Nothing runs in the background.",
+      text: "Updates come from signed GitHub Releases. Mochi checks the manifest, verifies the installer against its update key, and only installs after you click. Nothing runs in the background.",
     }),
     h("div", { class: "row" },
       h("label", { text: "Check when Settings opens" }),
@@ -1207,7 +1207,7 @@ function securitySection(): HTMLElement {
               const url = URL.createObjectURL(blob);
               const a = document.createElement("a");
               a.href = url;
-              a.download = `coucou-audit-${new Date().toISOString().slice(0, 10)}.jsonl`;
+              a.download = `mochi-audit-${new Date().toISOString().slice(0, 10)}.jsonl`;
               a.click();
               URL.revokeObjectURL(url);
             }
@@ -1274,7 +1274,7 @@ async function main() {
 
   clear(root);
   root.append(
-    h("h1", {}, h("span", { text: "Coucou" }), h("span", { class: "version", text: version })),
+    h("h1", {}, h("span", { text: "Mochi" }), h("span", { class: "version", text: version })),
   );
   const welcome = welcomeSection(providers, hasKey, status.installed, launchers);
   if (welcome) root.append(welcome);

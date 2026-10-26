@@ -20,7 +20,7 @@ pub fn init() {
     let (policy, _) = policy::load();
     if policy.kill_switch_engaged {
         KILLED.store(true, Ordering::SeqCst);
-        eprintln!("[coucou::security] kill switch restored from disk (engaged)");
+        eprintln!("[mochi::security] kill switch restored from disk (engaged)");
     } else {
         KILLED.store(false, Ordering::SeqCst);
     }

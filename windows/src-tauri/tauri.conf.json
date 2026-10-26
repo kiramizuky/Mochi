@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Coucou",
+  "productName": "Mochi",
   "version": "0.1.1",
   "identifier": "id.pcstudio.mochi",
   "build": {
@@ -18,7 +18,7 @@
     "windows": [
       {
         "label": "island",
-        "title": "Coucou",
+        "title": "Mochi",
         "url": "index.html",
         "width": 240,
         "height": 6,
@@ -68,7 +68,7 @@
     "copyright": "© Louis Raille",
     "category": "DeveloperTool",
     "shortDescription": "Mochi lives at the top of your screen",
-    "longDescription": "Coucou puts Mochi at the top of your screen: it shows your Claude Code sessions and a few integrations, and lets you approve, answer, chat and drop files without leaving what you are doing.",
+    "longDescription": "Mochi puts your AI assistant at the top of your screen: it shows your Claude Code sessions and integrations, and lets you approve, answer, chat and drop files without leaving what you are doing.",
     "windows": {
       "minimumWebview2Version": "110.0.1587.0",
       "webviewInstallMode": {

@@ -52,7 +52,7 @@ pub fn line(message: impl AsRef<str>) {
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
-    let path = dir.join("coucou.log");
+    let path = dir.join("mochi.log");
     rotate_if_needed(&path);
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
@@ -81,9 +81,9 @@ fn rotate_if_needed(path: &Path) {
 pub fn export() -> std::io::Result<PathBuf> {
     let dir = settings::local_dir();
     std::fs::create_dir_all(&dir)?;
-    let target = dir.join("coucou-log-export.txt");
+    let target = dir.join("mochi-log-export.txt");
     let mut out = String::new();
-    for name in ["coucou.log.1", "coucou.log"] {
+    for name in ["mochi.log.1", "mochi.log", "coucou.log.1", "coucou.log"] {
         let Ok(text) = std::fs::read_to_string(dir.join(name)) else {
             continue;
         };
