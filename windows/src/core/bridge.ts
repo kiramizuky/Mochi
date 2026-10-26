@@ -126,6 +126,18 @@ export const Bridge = {
 
   /** Tray → Pause. Stops the integration pollers, not just the island. */
   setPaused: (paused: boolean) => call<void>("set_paused", { paused }),
+
+  // ── Updates ───────────────────────────────────────────────────────────────
+  /**
+   * Asks the signed update manifest for a newer version. `null` means current.
+   * Only reads the manifest; nothing is downloaded until `updatesInstall`.
+   */
+  updatesCheck: () => callOrThrow<UpdateInfo | null>("update_check"),
+  /**
+   * Downloads, verifies against Coucou's minisign key and runs the installer.
+   * Windows shows the NSIS progress bar and restarts the app afterwards.
+   */
+  updatesInstall: () => callOrThrow<void>("update_install"),
 };
 
 export interface IntegrationUpdate {
@@ -188,6 +200,22 @@ export interface CrashReport {
   appVersion: string;
 }
 
+/** A newer release announced by the signed update manifest. */
+export interface UpdateInfo {
+  currentVersion: string;
+  version: string;
+  /** Publish date from the manifest, when it has one. */
+  date: string | null;
+  /** Release notes, already capped by the Rust side. */
+  body: string | null;
+}
+
+export interface UpdateProgress {
+  downloaded: number;
+  /** `null` when the server does not send a content length. */
+  total: number | null;
+}
+
 export interface DroppedFile {
   name: string;
   path: string;
@@ -219,7 +247,8 @@ export type BridgeEvent =
   | { name: "cursor"; payload: { x: number; y: number } }
   | { name: "tray"; payload: string }
   | { name: "hook"; payload: Record<string, unknown> }
-  | { name: "screen-changed"; payload: null };
+  | { name: "screen-changed"; payload: null }
+  | { name: "update-progress"; payload: UpdateProgress };
 
 export interface DragDropPayload {
   type: "enter" | "over" | "drop" | "leave";

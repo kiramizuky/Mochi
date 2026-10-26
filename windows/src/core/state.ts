@@ -102,6 +102,8 @@ export interface Settings {
   preferredTerminal: string;
   /** False until the first-run welcome card is finished or skipped. */
   onboarded: boolean;
+  /** Ask GitHub Releases for a newer version when Settings opens. */
+  autoCheckUpdates: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -121,6 +123,7 @@ export const DEFAULT_SETTINGS: Settings = {
   preferredEditor: "auto",
   preferredTerminal: "auto",
   onboarded: false,
+  autoCheckUpdates: true,
 };
 
 type Listener = () => void;

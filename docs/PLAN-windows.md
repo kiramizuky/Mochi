@@ -11,23 +11,25 @@ paritas fitur macOS secara bertahap.
 |---|---|---|
 | 0 — Baseline build | Selesai untuk build/CLI | `npm ci`, `cargo test --workspace`, `npm run build`, `npm run smoke:hook`, dan `npm run pack` lulus di mesin dev Windows. GUI dijalankan lewat smoke test aplikasi; belum ada UAT pada mesin bersih. Versi toolchain dicatat di `windows/README.md`. |
 | 1 — Aset dan hardening | Selesai | 28 WAV orisinal ada di `shared/sounds/`, build gagal bila ada yang hilang, `msSmartScreenProtection` dihapus, CSP ditinjau, relay di-bundle dan di-smoke-test, uninstall hanya membersihkan data disposable. |
-| 2 — Test dan CI Windows | Selesai kecuali run CI pertama | 37 test TypeScript + 64 test Rust lulus. Smoke test aplikasi (9 pemeriksaan: island, geometri panel/wake strip + always-on-top, IPC frontend, Settings, frontend Settings + kartu Welcome, tray, relay, file drop Unicode) berjalan lokal pada build debug dan release. Workflow `.github/workflows/windows.yml` menjalankan seluruh test, smoke aplikasi, dan mengunggah installer + SHA-256. UAT instalasi otomatis tersedia dan lulus lokal. Belum: run pertama di GitHub Actions dan verifikasi pada mesin Windows 10/11 bersih. |
-| 3 — Signing dan distribusi | Sebagian | Pipeline signing selesai dan tervalidasi dengan sertifikat self-signed sementara (PFX + thumbprint + timestamp RFC 3161), termasuk verifikasi `signtool /pa /all`. Workflow rilis terpisah siap. Belum: sertifikat Authenticode nyata, secret `WINDOWS_SIGNING_PFX_BASE64`/`WINDOWS_SIGNING_PFX_PASSWORD`, artefak signed dari CI, publikasi GitHub Release, dan UAT Windows 10/11 tanpa toolchain. Installer lokal tetap unsigned. |
-| 4 — Paritas fitur inti | Sebagian | 4.1 selesai: registry Anthropic/OpenAI/Gemini/Groq/lokal, key per provider di Credential Manager, model selector dinamis dengan fallback statis, dan endpoint lokal tervalidasi. 4.2 selesai: status kesehatan integrasi di Settings, log disanitasi dengan rotasi 1 MB, ekspor log aman, dan crash report lokal yang disanitasi (tanpa upload). 4.4 selesai: kartu onboarding pertama kali serta pemilihan editor/terminal dengan deteksi otomatis dan peluncur tervalidasi. 4.3 (auto-update) tertunda sampai kanal rilis bertanda tangan tersedia. |
-| 5 — Fitur lanjutan/otonom | Belum | Wajib RFC + threat model per fitur. |
+| 2 — Test dan CI Windows | Selesai kecuali run CI pertama | 37 test TypeScript + 68 test Rust lulus. Smoke test aplikasi (9 pemeriksaan: island, geometri panel/wake strip + always-on-top, IPC frontend, Settings, frontend Settings + kartu Welcome, tray, relay, file drop Unicode) berjalan lokal pada build debug dan release. Workflow `.github/workflows/windows.yml` menjalankan seluruh test, smoke aplikasi, dan mengunggah installer + SHA-256. UAT instalasi otomatis tersedia dan lulus lokal. Belum: run pertama di GitHub Actions dan verifikasi pada mesin Windows 10/11 bersih. |
+| 3 — Signing dan distribusi | Sebagian | Pipeline signing selesai dan tervalidasi dengan sertifikat self-signed sementara (PFX + thumbprint + timestamp RFC 3161), termasuk verifikasi `signtool /pa /all`. Urutan rilis kini benar: build tanpa bundle, signing binary, bundling dengan `--no-binary-patching`, signing installer, lalu menandatangani ulang installer final untuk updater dan menulis `latest.json`. Belum: sertifikat Authenticode nyata, secret `WINDOWS_SIGNING_PFX_BASE64`/`WINDOWS_SIGNING_PFX_PASSWORD` serta `TAURI_SIGNING_PRIVATE_KEY`/`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, artefak signed dari CI, publikasi GitHub Release, dan UAT Windows 10/11 tanpa toolchain. Installer lokal tetap unsigned. |
+| 4 — Paritas fitur inti | Selesai secara lokal | 4.1 selesai: registry Anthropic/OpenAI/Gemini/Groq/lokal, key per provider di Credential Manager, model selector dinamis dengan fallback statis, dan endpoint lokal tervalidasi. 4.2 selesai: status kesehatan integrasi di Settings, log disanitasi dengan rotasi 1 MB, ekspor log aman, dan crash report lokal yang disanitasi (tanpa upload). 4.4 selesai: kartu onboarding pertama kali serta pemilihan editor/terminal dengan deteksi otomatis dan peluncur tervalidasi. 4.3 selesai untuk infrastruktur: `tauri-plugin-updater`, manifest GitHub Releases bertanda tangan minisign, cek manual dan otomatis di Settings, progress instalasi, serta feed lokal khusus debug. Kanal stabil tetap ditahan sampai Authenticode dan UAT tersedia. |
+| 5 — Fitur lanjutan/otonom | RFC fondasi dalam review | Template RFC dan threat model tersedia di `docs/rfc/` dan `docs/threat-models/`. RFC 5.0 (`0001`) mendefinisikan gate policy default-deny, audit lokal, consent, dan kill switch; belum ada fitur berisiko yang diimplementasikan. |
 
 Perintah verifikasi cepat dari `windows/`:
 
 ```powershell
 npm ci
 npm run verify            # versi, typecheck, 37 test TS, 28 WAV
-cargo test --workspace    # 64 test Rust
+cargo test --workspace    # 68 test Rust (64 lib + 3 hook + 1 cek signature rilis)
 npm run build             # typecheck + bundle front end + hook release
 npm run smoke:hook        # relay aman saat Coucou ditutup
 npm run smoke:app         # 9 pemeriksaan runtime pada build release
 npm run sign:smoke        # pipeline signing dengan sertifikat sementara
 npm run uat:install       # install, launch, smoke, uninstall, cleanup
 npm run pack              # installer NSIS + file .sha256 (belum ditandatangani)
+npm run feed:updater      # latest.json dari installer + signature final
+npm run feed:serve        # feed lokal untuk menguji cek update (debug)
 ```
 
 `npm run smoke:app` memerlukan `cargo build --release -p coucou --features custom-protocol`
@@ -197,10 +199,14 @@ Kriteria selesai:
 Catatan status (26 Oktober 2026): langkah 1–4 selesai di repository. Skrip
 `sign.ps1`, `verify-signature.ps1`, `sign-smoke.ps1`, dan `uat-install.ps1`
 tervalidasi lokal, termasuk PFX, thumbprint, timestamp, dan pembersihan
-sertifikat sementara. Workflow `.github/workflows/windows-release.yml` memisahkan
-build (`--no-bundle`), signing binary, bundling, signing installer, checksum, dan
-publikasi. Langkah 5–6 belum dapat diselesaikan tanpa sertifikat Authenticode
-nyata, secret repository, serta mesin Windows 10/11 bersih.
+sertifikat sementara. Workflow `.github/workflows/windows-release.yml` memakai
+urutan yang tidak membatalkan signature: build `--no-bundle`, signing
+`coucou.exe`/`coucou-hook.exe`, bundling dengan `--no-binary-patching`, signing
+installer, lalu menandatangani ulang installer final dengan kunci updater
+(`tauri signer sign --app-version`), menulis `latest.json`, dan memverifikasi
+Authenticode serta signature updater sebelum publikasi. Langkah 5–6 belum dapat
+diselesaikan tanpa sertifikat Authenticode nyata, secret repository, kunci
+updater produksi, serta mesin Windows 10/11 bersih.
 
 ## Fase 4 — Paritas fitur inti macOS
 
@@ -262,7 +268,23 @@ Explorer. Render kartu Welcome dan bagian editor/terminal ikut diperiksa smoke
 test; peluncuran editor/terminal nyata serta penyempurnaan DPI, multi-monitor,
 suspend/resume, dan accessibility keyboard masih menunggu UAT manual.
 
-Belum: rotasi multi-key/rate-limit otomatis dan auto-update (langkah 3).
+Langkah 3 (auto-update) selesai pada tingkat infrastruktur. `tauri-plugin-updater`
+membaca manifest `latest.json` dari
+`https://github.com/kiramizuky/Mochi/releases/latest/download/latest.json`,
+memverifikasi installer dengan kunci minisign yang tertanam di
+`tauri.conf.json`, dan memasangnya lewat NSIS `passive` hanya setelah klik
+**Install** di Settings. `requireSignedVersion` mengikat signature ke versi yang
+diumumkan, sehingga manifest yang menukar nomor versi ditolak. Cek otomatis
+berjalan saat Settings dibuka (bukan saat boot, dan tidak sama sekali pada smoke
+mode); cek manual selalu tersedia. Build lokal tetap tanpa kunci updater karena
+`createUpdaterArtifacts` hanya diaktifkan oleh `tauri.release.conf.json`.
+Endpoint hanya bisa dioverride oleh build debug lewat `COUCOU_UPDATER_ENDPOINT`
+(HTTPS atau loopback HTTP); build release mengabaikannya. Feed lokal dapat diuji
+dengan `npm run feed:serve` + `npm run tauri dev`. Kanal stabil tetap ditahan
+sampai Authenticode, kunci updater produksi, dan UAT tersedia.
+
+Belum: rotasi multi-key/rate-limit otomatis per provider; UAT auto-update pada
+Windows 10/11 dan publikasi rilis beta bertanda tangan.
 
 ## Fase 5 — Fitur lanjutan dan otonom
 
@@ -279,6 +301,18 @@ model untuk masing-masing sebelum implementasi:
 - filesystem/clipboard watcher;
 - autonomous workflow, dynamic tools, dan multi-agent orchestration;
 - screen capture, visual grounding, serta kontrol aplikasi Windows.
+
+Urutan yang disepakati: **fondasi (policy, audit, consent, kill switch) → MCP
+client → clipboard/filesystem watcher → voice/TTS → memory/RAG → Telegram →
+autonomous/dynamic tools → screen/app automation.** RFC 5.0
+([`rfc/0001`](rfc/0001-phase5-foundation-policy-audit-consent-killswitch.md))
+dan threat model-nya
+([`threat-models/0001`](threat-models/0001-phase5-foundation-policy-audit-consent-killswitch.md))
+sedang dalam review; template ada di
+[`rfc/0000-template.md`](rfc/0000-template.md) dan
+[`threat-models/0000-template.md`](threat-models/0000-template.md). Tidak ada
+fitur Phase 5 yang boleh diimplementasikan sebelum RFC terkait berstatus
+`Accepted`.
 
 Untuk setiap fitur, definisikan:
 
@@ -302,7 +336,8 @@ Untuk setiap fitur, definisikan:
 | Editor/terminal | Ada (VS Code, Cursor, Windsurf, Antigravity; Windows Terminal, PowerShell, pwsh, Git Bash, cmd) | Uji manual pada mesin dengan beberapa editor terpasang. |
 | Onboarding | Ada (kartu tiga langkah saat pertama kali) | Render profil bersih dicakup smoke test; uji alur upgrade manual. |
 | Audio | Ada (28 WAV CC0) | Pertahankan validasi build dan smoke test. |
-| Auto-update | Belum ada | Implementasikan setelah signing. |
+| Auto-update | Ada (beta; manifest GitHub + minisign, cek/consent manual) | Kanal stabil setelah Authenticode, kunci produksi, dan UAT. |
+| Policy/audit/consent/kill switch | RFC 5.0 dalam review | Implementasikan fondasi sebelum fitur Phase 5 lain. |
 | Voice | Belum ada | RFC dan implementasi lintas API Windows. |
 | MCP, memory, autonomous | Belum ada | Port bertahap setelah policy/audit tersedia. |
 | Screen/app automation | Belum ada | Implementasi terakhir, dengan consent dan kill switch. |
@@ -338,7 +373,18 @@ terbuka sampai diuji pada mesin tanpa toolchain.
 - [x] Pipeline signature lolos dengan sertifikat self-signed sementara: PFX,
   thumbprint, timestamp RFC 3161, dan `signtool verify /pa /all`
   (`npm run sign:smoke`).
+- [x] Urutan rilis tidak membatalkan signature: binary ditandatangani sebelum
+  bundling (`--no-binary-patching`), installer final ditandatangani Authenticode
+  lalu ditandatangani ulang untuk updater dengan `--app-version`, dan
+  `latest.json` diverifikasi terhadap kunci publik di `tauri.conf.json`
+  (`cargo test --test updater_signature`).
 - [ ] Installer dan executable signed nyata dari CI lolos verifikasi signature.
+- [ ] Cek update dari feed beta bertanda tangan: Settings menampilkan versi baru,
+  **Install** memverifikasi signature sebelum menjalankan installer, aplikasi
+  restart, dan versi terpasang berubah. Versi/signature yang dimanipulasi di
+  manifest harus ditolak.
+- [ ] Cek otomatis hanya berjalan saat Settings dibuka (bukan saat boot), dan
+  smoke mode tidak melakukan request jaringan.
 - [x] Uninstall tidak mengubah `%APPDATA%\Coucou\settings.json` maupun
   `%USERPROFILE%\.claude\settings.json` (hash sebelum/sesudah di UAT).
 - [ ] Tidak ada secret, command penuh, atau konten file sensitif dalam log

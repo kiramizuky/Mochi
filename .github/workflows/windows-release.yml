@@ -1,12 +1,22 @@
 name: Windows Release
 
 # Builds a *signed* NSIS installer, verifies every signature, and publishes the
-# installer plus checksums. The ordinary `windows.yml` workflow stays unsigned
-# and is what pull requests run.
+# installer, its update signature and latest.json. The ordinary `windows.yml`
+# workflow stays unsigned and is what pull requests run.
+#
+# Two independent signatures protect a release:
+#   * Authenticode (publisher) — Microsoft SmartScreen and the published
+#     WinVerifyTrust result users see in Explorer.
+#   * Tauri/minisign (update key) — verified by the updater before it runs an
+#     installer downloaded from the release manifest.
+# They are separate keys and separate secrets. Losing the update key means
+# existing installs can never update again, so back it up offline.
 #
 # Required repository secrets (never printed, never uploaded):
-#   WINDOWS_SIGNING_PFX_BASE64   base64 of the Authenticode .pfx
-#   WINDOWS_SIGNING_PFX_PASSWORD password for that .pfx
+#   WINDOWS_SIGNING_PFX_BASE64      base64 of the Authenticode .pfx
+#   WINDOWS_SIGNING_PFX_PASSWORD    password for that .pfx
+#   TAURI_SIGNING_PRIVATE_KEY       literal contents of the updater private key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  password for the updater private key
 #
 # The pfx is imported into the runner's CurrentUser\My store, used through its
 # thumbprint (so no password lands in a command line), and removed afterwards.
@@ -59,6 +69,25 @@ jobs:
       - name: Install front-end dependencies
         run: npm ci
 
+      - name: Check the signing secrets are present
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+          UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          foreach ($pair in @(
+            @("WINDOWS_SIGNING_PFX_BASE64", $env:PFX_BASE64),
+            @("WINDOWS_SIGNING_PFX_PASSWORD", $env:PFX_PASSWORD),
+            @("TAURI_SIGNING_PRIVATE_KEY", $env:UPDATER_KEY),
+            @("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", $env:UPDATER_PASSWORD)
+          )) {
+            if ([string]::IsNullOrWhiteSpace($pair[1])) {
+              throw "Missing repository secret $($pair[0]). A stable release must be signed with both Authenticode and the updater key."
+            }
+          }
+
       - name: Check the tag matches the app version
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -89,7 +118,10 @@ jobs:
       - name: Rust lints
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Build the app without bundling (so we can sign first)
+      # Order matters. `tauri bundle` patches coucou.exe with bundle metadata,
+      # which invalidates Authenticode; `--no-binary-patching` keeps the binary
+      # we signed a moment ago intact.
+      - name: Build the app without bundling (so we can sign the binaries first)
         run: npx tauri build --no-bundle
 
       - name: App smoke test on the release binary
@@ -98,8 +130,6 @@ jobs:
       - name: Import the Authenticode certificate
         shell: pwsh
         run: |
-          if (-not $env:WINDOWS_SIGNING_PFX_BASE64) { throw "Missing secret WINDOWS_SIGNING_PFX_BASE64" }
-          if (-not $env:WINDOWS_SIGNING_PFX_PASSWORD) { throw "Missing secret WINDOWS_SIGNING_PFX_PASSWORD" }
           $bytes = [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64)
           $pfx = Join-Path $env:RUNNER_TEMP "coucou-signing.pfx"
           [IO.File]::WriteAllBytes($pfx, $bytes)
@@ -114,12 +144,18 @@ jobs:
           "COUCOU_SIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           "COUCOU_SIGN_PFX=$pfx" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           Write-Host "Imported certificate $($cert.Subject) $($cert.Thumbprint)"
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
 
       - name: Sign the relay and the app
         run: ./scripts/sign.ps1 -Files target/release/coucou-hook.exe,target/release/coucou.exe -RequireSignature
 
       - name: Bundle the installer around the signed binaries
-        run: npx tauri bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri bundle --no-binary-patching --config src-tauri/tauri.release.conf.json
 
       - name: Sign the installer
         shell: pwsh
@@ -129,17 +165,63 @@ jobs:
           if (-not (Test-Path $installer)) { throw "NSIS installer not found at $installer" }
           ./scripts/sign.ps1 -Files $installer -RequireSignature
 
-      - name: Copy the signed installer and write checksums
+      # Authenticode changed the installer's bytes, so the .sig `tauri bundle`
+      # produced no longer matches. Sign the final bytes and bind the signature
+      # to this version (`requireSignedVersion` rejects a manifest that swaps the
+      # version number on an older signed installer).
+      - name: Re-sign the final installer for the updater
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $installer = "target/release/bundle/nsis/Coucou_${version}_x64-setup.exe"
+          npx tauri signer sign $installer --app-version $version
+          if (-not (Test-Path "$installer.sig")) { throw "Updater signature was not written next to $installer" }
+
+      - name: Copy the signed installer and its update signature
         shell: pwsh
         run: |
           node scripts/pack.mjs
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           $installer = "release/Coucou-Windows-$version-setup.exe"
+          if (-not (Test-Path "$installer.sig")) { throw "release/$($installer).sig is missing" }
           $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  Coucou-Windows-$version-setup.exe" | Set-Content release/SHA256SUMS.txt -Encoding ascii
           Get-Content release/SHA256SUMS.txt
 
-      - name: Verify every signature and timestamp
+      - name: Write latest.json from the final signature
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          node scripts/updater-feed.mjs --installer "release/Coucou-Windows-$version-setup.exe"
+
+      # The updater's own signature is checked at install time by the plugin.
+      # Here we prove the manifest is internally consistent before publishing it.
+      - name: Check the update manifest
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $manifest = Get-Content release/latest.json -Raw | ConvertFrom-Json
+          if ($manifest.version -ne $version) { throw "latest.json version $($manifest.version) != $version" }
+          $platform = $manifest.platforms.'windows-x86_64'
+          if (-not $platform.signature) { throw "latest.json has no windows-x86_64 signature" }
+          $decoded = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($platform.signature))
+          if (-not $decoded.Contains("trusted comment:")) { throw "latest.json signature is not a Tauri signature" }
+          $expected = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/v$version/Coucou-Windows-$version-setup.exe"
+          if ($env:GITHUB_REPOSITORY -and $platform.url -ne $expected) { throw "latest.json URL $($platform.url) != $expected" }
+          if (-not $decoded.Contains("version:$version")) { throw "The updater signature is not bound to version $version" }
+
+      - name: Verify the installer against the update key
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $env:COUCOU_VERIFY_FEED = "release/latest.json"
+          $env:COUCOU_VERIFY_INSTALLER = "release/Coucou-Windows-$version-setup.exe"
+          cargo test --test updater_signature -- --nocapture
+
+      - name: Verify every Authenticode signature and timestamp
         shell: pwsh
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
@@ -158,13 +240,15 @@ jobs:
             Remove-Item $env:COUCOU_SIGN_PFX -Force -ErrorAction SilentlyContinue
           }
 
-      - name: Upload the signed installer
+      - name: Upload the signed installer and update feed
         uses: actions/upload-artifact@v4
         with:
           name: Coucou-Windows-signed-${{ github.sha }}
           path: |
             windows/release/Coucou-Windows-*-setup.exe
+            windows/release/Coucou-Windows-*-setup.exe.sig
             windows/release/Coucou-Windows-*-setup.exe.sha256
+            windows/release/latest.json
             windows/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -178,7 +262,9 @@ jobs:
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           gh release create $env:GITHUB_REF_NAME `
             "release/Coucou-Windows-$version-setup.exe" `
+            "release/Coucou-Windows-$version-setup.exe.sig" `
             "release/Coucou-Windows-$version-setup.exe.sha256" `
+            "release/latest.json" `
             "release/SHA256SUMS.txt" `
             --title "Coucou $version" `
             --generate-notes `

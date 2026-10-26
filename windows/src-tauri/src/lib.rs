@@ -14,6 +14,7 @@ mod secrets;
 mod settings;
 mod smoke;
 mod tray;
+mod updates;
 mod win_user;
 
 use std::os::windows::process::CommandExt;
@@ -401,6 +402,24 @@ fn log_line(message: String) {
     log::line(format!("ui  {message}"));
 }
 
+// ── Updates ───────────────────────────────────────────────────────────────────
+
+/// Asks the signed update manifest for a newer version. `None` means the
+/// installed build is current. The manifest only carries a version and notes;
+/// the installer itself is verified against the app's minisign key when it is
+/// downloaded, and only from an explicit click in Settings.
+#[tauri::command]
+async fn update_check(app: AppHandle) -> Result<Option<updates::UpdateInfo>, String> {
+    updates::check(&app).await
+}
+
+/// Downloads, verifies and installs the announced update. On Windows the plugin
+/// starts the NSIS installer, exits this process, and the app restarts.
+#[tauri::command]
+async fn update_install(app: AppHandle) -> Result<(), String> {
+    updates::install(app).await
+}
+
 // ── Settings window ───────────────────────────────────────────────────────────
 
 /// WebView2 allows exactly one browser environment per app, and its options are
@@ -467,6 +486,9 @@ pub fn show_settings_window(app: &AppHandle) {
     let _ = win.unminimize();
     let _ = win.show();
     let _ = win.set_focus();
+    // The Settings page runs a quiet update check only when it is opened, never
+    // at boot while the window is still hidden.
+    let _ = app.emit_to("settings", "settings-opened", ());
 }
 
 #[tauri::command]
@@ -489,6 +511,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Shared {
             settings: Mutex::new(loaded.clone()),
             gate: gate.clone(),
@@ -537,6 +560,8 @@ pub fn run() {
             open_n8n,
             open_settings_window,
             set_paused,
+            update_check,
+            update_install,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

@@ -3,12 +3,14 @@
 // integrations land here too in a later stage.
 
 import "./settings.css";
-import { Bridge, onEvent, type CrashReport, type HookStatus, type IntegrationHealth, type LauncherCatalog, type LauncherOption, type ProviderInfo, type ProviderModelOption } from "../core/bridge";
+import { Bridge, onEvent, type CrashReport, type HookStatus, type IntegrationHealth, type LauncherCatalog, type LauncherOption, type ProviderInfo, type ProviderModelOption, type UpdateProgress } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
 let version = "";
+/** True only for `COUCOU_SMOKE_TEST=1` launches; the update check never runs. */
+let smoke = false;
 
 const root = document.getElementById("settings-root")!;
 
@@ -858,6 +860,126 @@ function generalSection(): HTMLElement {
   );
 }
 
+// ── Updates section ───────────────────────────────────────────────────────────
+
+/** Set by `updateSection`; fires a quiet check when Settings is opened. */
+let autoUpdateCheck: (() => void) | null = null;
+
+function updateSection(): HTMLElement {
+  const feedback = h("div", {});
+  const progress = h("div", { class: "hint" });
+  const checkBtn = h("button", { class: "primary", text: "Check for updates" });
+  let installBtn: HTMLButtonElement | null = null;
+  let busy = false;
+
+  const message = (err: unknown) => String(err).replace(/^Error:\s*/, "");
+
+  function setBusy(on: boolean, label: string) {
+    busy = on;
+    (checkBtn as HTMLButtonElement).disabled = on;
+    if (installBtn) installBtn.disabled = on;
+    checkBtn.textContent = on ? label : "Check for updates";
+  }
+
+  function notice(kind: "ok" | "err", text: string) {
+    feedback.append(h("div", { class: `notice ${kind}`, text }));
+  }
+
+  function dropInstall() {
+    installBtn?.remove();
+    installBtn = null;
+  }
+
+  function drawProgress(p: UpdateProgress) {
+    clear(progress);
+    const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
+    const text = p.total && p.total > 0
+      ? `Downloading update — ${Math.min(100, Math.round((p.downloaded / p.total) * 100))}% (${mb(p.downloaded)} of ${mb(p.total)} MB)`
+      : `Downloading update — ${mb(p.downloaded)} MB`;
+    progress.append(h("span", { text }));
+  }
+
+  async function install(target: string) {
+    if (busy) return;
+    clear(feedback);
+    clear(progress);
+    setBusy(true, "Installing…");
+    progress.append(h("span", { text: `Preparing Coucou ${target}…` }));
+    try {
+      await Bridge.updatesInstall();
+      // On Windows the app exits so the installer can replace the running
+      // files, so this line is only reached if the install did not start.
+      notice("ok", "The installer has started. Coucou restarts when it finishes.");
+    } catch (err) {
+      clear(progress);
+      notice("err", `Could not install the update: ${message(err)}`);
+      setBusy(false, "");
+    }
+  }
+
+  async function check(silent: boolean) {
+    if (busy) return;
+    clear(feedback);
+    clear(progress);
+    dropInstall();
+    setBusy(true, "Checking…");
+    try {
+      const info = await Bridge.updatesCheck();
+      if (!info) {
+        notice("ok", `Coucou ${version || "is"} is up to date.`);
+        return;
+      }
+      feedback.append(
+        h("div", { class: "notice ok" },
+          h("strong", { text: `Coucou ${info.version} is available` }),
+          info.date ? h("span", { text: ` — released ${info.date.slice(0, 10)}` }) : null,
+          info.body ? h("div", { class: "hint", text: info.body }) : null,
+        ),
+      );
+      installBtn = h("button", { class: "primary", text: `Install ${info.version}` }) as HTMLButtonElement;
+      installBtn.addEventListener("click", () => void install(info.version));
+      feedback.append(h("div", { class: "row" }, installBtn));
+    } catch (err) {
+      if (silent) {
+        // Settings just opened; an offline laptop is not an error worth a red box.
+        progress.append(h("span", { text: "Could not reach the update feed. Check again later." }));
+      } else {
+        notice("err", `Could not check for updates: ${message(err)}`);
+      }
+    } finally {
+      setBusy(false, "");
+    }
+  }
+
+  checkBtn.addEventListener("click", () => void check(false));
+
+  // The Rust side emits this while the signed installer downloads.
+  void onEvent<UpdateProgress>("update-progress", drawProgress);
+
+  autoUpdateCheck = () => {
+    if (settings.autoCheckUpdates) void check(true);
+  };
+
+  const section = h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Updates" })),
+    h("div", {
+      class: "hint",
+      text: "Updates come from signed GitHub Releases. Coucou checks the manifest, verifies the installer against its update key, and only installs after you click. Nothing runs in the background.",
+    }),
+    h("div", { class: "row" },
+      h("label", { text: "Check when Settings opens" }),
+      toggle(settings.autoCheckUpdates, (v) => { settings.autoCheckUpdates = v; void save(); }),
+    ),
+    h("div", { class: "row" }, checkBtn),
+    progress,
+    feedback,
+  );
+
+  return section;
+}
+
 // ── Logs section ──────────────────────────────────────────────────────────────
 
 function logSection(): HTMLElement {
@@ -970,6 +1092,7 @@ async function main() {
   if (boot) {
     settings = { ...settings, ...boot.settings };
     version = boot.version;
+    smoke = boot.smoke;
   }
   const status = (await Bridge.hooksStatus()) ?? {
     installed: false, settingsPath: "", hookPath: "", hookReady: false,
@@ -1006,6 +1129,7 @@ async function main() {
     launcherSection(launchers),
     integrationsSection(present, health),
     generalSection(),
+    updateSection(),
     logSection(),
     crashSection(crashes),
     h("div", {
@@ -1017,6 +1141,14 @@ async function main() {
   void onEvent<Settings>("settings-changed", (s) => {
     settings = { ...settings, ...s };
   });
+
+  // Rust emits this every time the hidden Settings window is shown. A smoke run
+  // never touches the network, so it skips the check entirely.
+  if (smoke) {
+    autoUpdateCheck = null;
+  } else {
+    void onEvent<null>("settings-opened", () => autoUpdateCheck?.());
+  }
 
   // The smoke test uses this to prove the Settings webview actually rendered,
   // and that a fresh profile got the Welcome card rather than an empty page.

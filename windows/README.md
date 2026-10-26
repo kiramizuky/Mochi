@@ -154,10 +154,15 @@ cues is missing.
 
 ```powershell
 npm run verify          # version sync, typecheck, 37 front-end tests, sound check
-cargo test --workspace  # 64 Rust tests (hooks, pipe timeouts, files, settings, providers, launchers, island geometry, crash reports, URLs)
+cargo test --workspace  # 68 Rust tests (hooks, pipe timeouts, files, settings, providers, launchers, island geometry, crash reports, URLs, updater endpoints)
 npm run smoke:hook      # coucou-hook exits 0 and stays silent with Coucou closed
 npm run smoke:app       # real app: island, geometry, IPC, tray, Settings, relay, file drop
 ```
+
+The release signature test (`tests/updater_signature.rs`) only runs when
+`COUCOU_VERIFY_FEED` and `COUCOU_VERIFY_INSTALLER` point at release artifacts;
+without them it prints a skip and passes. The release workflow uses it to
+verify the published installer against the embedded minisign key.
 
 `scripts/smoke-hook.ps1` talks to the real pipe, so close the island before
 running it locally. `scripts/smoke-app.ps1` launches the app with
@@ -188,6 +193,18 @@ Coucou-Windows-X.Y.Z-setup.exe.sha256  SHA-256 of the versioned installer
 Coucou-Windows-setup.exe               the same file under the rolling name
 ```
 
+When the build was produced with `tauri.release.conf.json` and the updater key
+(`TAURI_SIGNING_PRIVATE_KEY`), `pack.mjs` also copies the updater signature:
+
+```
+Coucou-Windows-X.Y.Z-setup.exe.sig     minisign signature for the update manifest
+```
+
+It only copies a signature that is newer than the installer and bound to the
+same version. A rebuilt installer invalidates the old signature, so a leftover
+`.sig` is removed with a warning instead of being published. The release
+workflow signs the final installer bytes again before it packs.
+
 An installer from `npm run pack` is **not Authenticode-signed**, so Windows
 SmartScreen will warn on first run. Signed installers only come from the release
 workflow. Verify the `.sha256` sidecar before testing.
@@ -196,21 +213,69 @@ Installing is optional — `target/release/coucou.exe` runs on its own. There is
 window in the taskbar and no console: the island at the top of the screen and the
 Mochi in the notification area are the whole app, and Quit lives in its menu.
 
+### Updates
+
+Settings → **Updates** checks the signed manifest at
+`https://github.com/kiramizuky/Mochi/releases/latest/download/latest.json` and
+shows the new version's notes. Nothing is downloaded or installed until the user
+clicks **Install**; the updater then verifies the installer with the minisign
+public key embedded in `tauri.conf.json` and runs the NSIS installer in passive
+mode. `requireSignedVersion` rejects a manifest that pairs a new version number
+with an older signed installer.
+
+The check runs when Settings is opened (not at app boot), can be turned off with
+**Check when Settings opens**, and is skipped entirely in smoke mode. A release
+build always uses the endpoint in `tauri.conf.json`. Only a debug build honours
+`COUCOU_UPDATER_ENDPOINT`, and only for HTTPS or loopback HTTP, so a stray
+environment variable cannot redirect a shipped app.
+
+To exercise the UI against a local feed, build a debug app, put a manifest and a
+signed installer in `windows/release/`, and run:
+
+```powershell
+npm run feed:serve
+$env:COUCOU_UPDATER_ENDPOINT = "http://127.0.0.1:8787/latest.json"
+npm run tauri dev
+```
+
+Use `npm run feed:updater` to write `latest.json` from an installer and its
+`.sig`. The development key at `%USERPROFILE%\.tauri\coucou-updater-dev.key`
+(password `coucou-dev-only`) is for this local test only; it must never sign a
+public release. Bump the version in a scratch build if you need the check to
+report an update rather than "up to date", and do not click **Install** against a
+feed whose installer does not match the announced version.
+
+The stable update channel is intentionally held back until Authenticode signing
+and a production updater key are in place. Beta builds may use the development
+key; a public stable release must not.
+
 ### Release and code signing
 
 Local builds stay unsigned and keep working. A public release must be signed,
 timestamped and produced by CI:
 
 1. `windows-release.yml` runs on a `v*` tag (or manually), checks that the tag
-   matches `tauri.conf.json`, and runs the full test suite.
+   matches `tauri.conf.json`, verifies the signing secrets are present, and runs
+   the full test suite.
 2. `npx tauri build --no-bundle` produces `coucou.exe` and `coucou-hook.exe`.
 3. `scripts/sign.ps1` signs both with the imported certificate (SHA-256,
    RFC 3161 timestamp).
-4. `npx tauri bundle` wraps the signed binaries into the NSIS installer, then
-   `scripts/sign.ps1` signs the installer.
-5. `scripts/pack.mjs` writes the versioned installer, the rolling copy and the
-   `.sha256` sidecar; `scripts/verify-signature.ps1` checks all three binaries
-   with `signtool verify /pa /all` and requires a timestamp.
+4. `npx tauri bundle --no-binary-patching --config src-tauri/tauri.release.conf.json`
+   wraps the already-signed binaries into the NSIS installer and creates the
+   updater artifact. The flag is required: normal bundling patches
+   `coucou.exe`, which would invalidate its Authenticode signature.
+5. `scripts/sign.ps1` signs the installer. Authenticode changes its bytes, so
+   the workflow then runs
+   `tauri signer sign <installer> --app-version <version>` to produce the
+   updater signature for the final bytes. `--app-version` is what
+   `requireSignedVersion` checks; signing before the Authenticode step would
+   publish a signature that matches neither the installer nor the version.
+6. `scripts/pack.mjs` writes the versioned installer, the rolling copy, the
+   `.sha256` sidecar and the `.sig`; `scripts/updater-feed.mjs` writes
+   `latest.json`; `scripts/verify-signature.ps1` checks all binaries with
+   `signtool verify /pa /all` and requires a timestamp; and
+   `cargo test --test updater_signature` verifies the installer against the
+   minisign public key in `tauri.conf.json`.
 
 Repository secrets (never logged or uploaded):
 
@@ -218,9 +283,18 @@ Repository secrets (never logged or uploaded):
 |---|---|
 | `WINDOWS_SIGNING_PFX_BASE64` | base64 of the Authenticode `.pfx` |
 | `WINDOWS_SIGNING_PFX_PASSWORD` | password for that `.pfx` |
+| `TAURI_SIGNING_PRIVATE_KEY` | literal contents of the updater private key |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | password for the updater private key |
+
+The two keys are independent. Authenticode satisfies SmartScreen and Explorer;
+the minisign key is what the updater verifies before it runs a downloaded
+installer. Losing the updater private key means existing installs can never
+update again — back it up offline before the first stable release. The public
+half is committed in `tauri.conf.json` (`plugins.updater.pubkey`) and is safe to
+share.
 
 Create a repository environment named `windows-release` (add required reviewers
-if the release must be approved manually) and store both secrets there or at
+if the release must be approved manually) and store the secrets there or at
 repository level; the workflow never prints or uploads them.
 
 The workflow imports the `.pfx` into `Cert:\CurrentUser\My`, signs by thumbprint

@@ -39,6 +39,18 @@
       }
     ]
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/kiramizuky/Mochi/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVENTgzMTZEMkVCREIwMjIKUldRaXNMMHViVEZZN2F0NytGckhqNkVjNVB0Q1lyZGhUNEdHZTdRdStXSG1ZVjNQNzQ1V1g4WFoK",
+      "windows": {
+        "installMode": "passive"
+      },
+      "requireSignedVersion": true
+    }
+  },
   "bundle": {
     "active": true,
     "targets": [

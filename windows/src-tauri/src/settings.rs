@@ -42,6 +42,14 @@ pub struct Settings {
     /// settings window opens once on a fresh install.
     #[serde(default)]
     pub onboarded: bool,
+    /// Ask GitHub Releases for a newer version when Settings opens. Only the
+    /// update manifest is fetched; installing is always an explicit click.
+    #[serde(default = "default_auto_check_updates")]
+    pub auto_check_updates: bool,
+}
+
+fn default_auto_check_updates() -> bool {
+    true
 }
 
 fn default_provider() -> String {
@@ -102,6 +110,7 @@ impl Default for Settings {
             preferred_editor: default_launcher(),
             preferred_terminal: default_launcher(),
             onboarded: false,
+            auto_check_updates: default_auto_check_updates(),
         }
     }
 }
@@ -170,6 +179,7 @@ mod tests {
         assert_eq!(s.preferred_editor, "auto");
         assert_eq!(s.preferred_terminal, "auto");
         assert!(!s.onboarded);
+        assert!(s.auto_check_updates);
         assert_eq!(s.screen, "primary");
         assert!(s.active_integrations.len() <= 4);
     }
@@ -189,6 +199,7 @@ mod tests {
             "preferredEditor",
             "preferredTerminal",
             "onboarded",
+            "autoCheckUpdates",
         ] {
             assert!(json.get(field).is_some(), "missing {field}");
         }
@@ -228,6 +239,10 @@ mod tests {
         assert!(
             !parsed.onboarded,
             "an upgrade must see the welcome card once"
+        );
+        assert!(
+            parsed.auto_check_updates,
+            "an older file opts into the update check by default"
         );
         assert!(!parsed.sound_enabled);
         assert_eq!(parsed.screen, "cursor");
