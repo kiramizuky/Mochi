@@ -19,9 +19,13 @@ struct BotCanvasView: View {
                 engine.lookY = lookY(state: state, size: size)
                 engine.particleOverhang = particleOverhang
                 // Widen slot when file is hovering over the mailbox (morph > 0.5)
-                // Open mouth (hover=0.20R) when file dragged over box; close when not
+                // Open mouth (hover=0.20R) when file dragged over box; articulate when speaking; close when not
                 if engine.morph > 0.3 {
                     engine.slotHTarget = state.fileDragOver ? 0.20 : 0
+                } else if VoiceManager.shared.isSpeaking {
+                    // Animasi artikulasi mulut alami saat Mochi berbicara (Speech Viseme)
+                    let speechWave = abs(sin(now * 14.0))
+                    engine.slotHTarget = CGFloat(0.12 * speechWave)
                 } else {
                     engine.slotHTarget = 0
                     if engine.morph < 0.05 { engine.slotH = 0; engine.slotHVel = 0 }
@@ -91,6 +95,9 @@ struct BotCanvasView: View {
     }
 
     private func lookX(state: AppState, size: CGSize) -> CGFloat {
+        if VoiceManager.shared.pttStatus == .listening {
+            return 0.0 // Tatap fokus ke tengah saat mendengarkan pengguna berbicara
+        }
         let screen = NSScreen.main ?? NSScreen.screens.first ?? NSScreen.screens[0]
         let (islandW, islandH) = islandSize(mode: state.mode, view: state.view,
                                              progress: state.uploadProgress,
@@ -104,6 +111,9 @@ struct BotCanvasView: View {
     }
 
     private func lookY(state: AppState, size: CGSize) -> CGFloat {
+        if VoiceManager.shared.pttStatus == .listening {
+            return 0.20 // Sedikit mendongak ke atas dengan ekspresi attentive
+        }
         let (islandW, islandH) = islandSize(mode: state.mode, view: state.view,
                                              progress: state.uploadProgress,
                                              nw: state.notchWidth, nh: state.notchHeight)

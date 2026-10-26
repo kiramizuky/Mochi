@@ -61,6 +61,12 @@ enum JSONValue: Sendable, Equatable {
         return nil
     }
 
+    /// Array value (`[JSONValue]`), nil for non-arrays.
+    var arrayValue: [JSONValue]? {
+        if case .array(let a) = self { return a }
+        return nil
+    }
+
     /// Number value, nil for non-numbers.
     var numberValue: Double? {
         if case .number(let n) = self { return n }

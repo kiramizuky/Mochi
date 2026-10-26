@@ -846,7 +846,11 @@ final class AppState: ObservableObject {
     }
 
     var effectiveState: BotState {
-        stateOverride ?? focusTask?.state ?? .idle
+        if let stateOverride { return stateOverride }
+        if VoiceDuplexEngine.shared.isInterrupted { return .question }
+        if VoiceManager.shared.pttStatus == .listening { return .searching }
+        if VoiceManager.shared.isSpeaking { return .working }
+        return focusTask?.state ?? .idle
     }
 
     // MARK: - Task management

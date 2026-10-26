@@ -98,7 +98,13 @@ final class ToolExecutor: @unchecked Sendable {
         guiClickDef, guiTypeDef, guiPressKeyDef, guiScrollDef, guiLocateAndClickDef,
         nightShiftRunDef,
         playbookListDef, playbookRunDef,
+        toolSynthesizeDef, toolListDynamicDef, toolRunDynamicDef,
     ]
+
+    /// Semua alat yang tersedia termasuk alat dinamis yang disintesis on-the-fly.
+    static var allTools: [LLMToolDef] {
+        tools + DynamicToolSynthesizer.shared.llmToolDefs
+    }
 
     static let shellRunDef = LLMToolDef(
         name: "shell_run",
@@ -772,6 +778,45 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    static let toolSynthesizeDef = LLMToolDef(
+        name: "tool_synthesize",
+        description: "Ciptakan dan kompilasi alat/skill baru secara otonom saat menghadapi tugas baru yang belum dicakup oleh alat bawaan. Script divalidasi keamanannya dan disimpan di Dynamic Skill Sandbox.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "id": .object(["type": .string("string"), "description": .string("ID unik alat dalam snake_case (contoh: 'custom_audio_converter', 'fetch_crypto_rates').")]),
+                "name": .object(["type": .string("string"), "description": .string("Nama deskriptif alat.")]),
+                "description": .object(["type": .string("string"), "description": .string("Penjelasan kegunaan dan input/output alat.")]),
+                "language": .object(["type": .string("string"), "description": .string("Bahasa pemrograman: 'bash', 'python', 'swift', atau 'javascript'.")]),
+                "script_source": .object(["type": .string("string"), "description": .string("Kode sumber lengkap script yang siap dieksekusi/dikompilasi.")]),
+                "parameter_names": .object(["type": .string("array"), "description": .string("Daftar nama parameter input yang diterima script.")]),
+            ]),
+            "required": .array([.string("id"), .string("name"), .string("script_source")]),
+        ])
+    )
+
+    static let toolListDynamicDef = LLMToolDef(
+        name: "tool_list_dynamic",
+        description: "Daftarkan semua alat dinamis/skill yang telah disintesis oleh asisten.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    static let toolRunDynamicDef = LLMToolDef(
+        name: "tool_run_dynamic",
+        description: "Jalankan alat dinamis yang telah disintesis di dalam Dynamic Skill Sandbox.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "id": .object(["type": .string("string"), "description": .string("ID alat dinamis yang akan dijalankan.")]),
+                "arguments": .object(["type": .string("object"), "description": .string("Parameter argumen key-value untuk alat tersebut.")]),
+            ]),
+            "required": .array([.string("id")]),
+        ])
+    )
+
     static let officeListSheetsDef = LLMToolDef(
         name: "office_list_sheets",
         description: "List all worksheet/tab names in the active Microsoft Excel or Numbers workbook.",
@@ -951,12 +996,14 @@ final class ToolExecutor: @unchecked Sendable {
 
     static let guiLocateAndClickDef = LLMToolDef(
         name: "gui_locate_and_click",
-        description: "Visual Grounding CUA: Cari elemen UI berdasarkan deskripsi visual, klik titik pusatnya, dan verifikasi hasil visualnya secara otomatis (closed-loop).",
+        description: "Visual Grounding CUA: Cari elemen UI berdasarkan deskripsi visual, lakukan aksi OS (klik, ketik, scroll, pintasan), dan verifikasi hasil visualnya secara otomatis dengan self-healing retry (closed-loop).",
         inputSchema: .object([
             "type": .string("object"),
             "properties": .object([
-                "element_description": .object(["type": .string("string"), "description": .string("Deskripsi elemen yang ingin diklik (contoh: \"tombol Save biru\", \"input pencarian\", \"icon download\").")]),
-                "expected_result": .object(["type": .string("string"), "description": .string("Kondisi visual yang diharapkan muncul setelah diklik (contoh: \"modal tertutup\", \"download selesai\").")]),
+                "element_description": .object(["type": .string("string"), "description": .string("Deskripsi elemen yang ingin dioperasikan (contoh: \"tombol Save biru\", \"input pencarian\", \"icon download\").")]),
+                "expected_result": .object(["type": .string("string"), "description": .string("Kondisi visual yang diharapkan muncul setelah aksi (contoh: \"modal tertutup\", \"download selesai\").")]),
+                "action": .object(["type": .string("string"), "description": .string("Tipe aksi OS: click, double_click, right_click, type_text, press_key, scroll. Defaults to click.")]),
+                "text_to_type": .object(["type": .string("string"), "description": .string("Teks yang ingin diketikkan jika action=type_text, atau nama tombol jika action=press_key.")]),
                 "app": .object(["type": .string("string"), "description": .string("Nama aplikasi target (opsional, defaults to frontmost).")]),
             ]),
             "required": .array([.string("element_description")]),
@@ -1028,6 +1075,9 @@ final class ToolExecutor: @unchecked Sendable {
         case "night_shift_run":        raw = "night shift"
         case "playbook_list":         raw = "all"
         case "playbook_run":          raw = input["playbook_id"]?.stringValue
+        case "tool_synthesize":       raw = input["id"]?.stringValue
+        case "tool_list_dynamic":     raw = "all dynamic tools"
+        case "tool_run_dynamic":      raw = input["id"]?.stringValue
         default:               raw = nil
         }
         let value = raw?.isEmpty == false ? raw! : name
@@ -1126,7 +1176,15 @@ final class ToolExecutor: @unchecked Sendable {
         case "github_create_issue": category = .network; target = input["owner"]?.stringValue
         case "stripe_create_payment": category = .network; target = input["amount"]?.stringValue
         case "n8n_trigger_workflow": category = .network; target = input["workflow_id"]?.stringValue
+        case "tool_synthesize": category = .fileWrite; target = input["id"]?.stringValue
+        case "tool_list_dynamic": category = .read; target = "list"
+        case "tool_run_dynamic": category = .shell; target = input["id"]?.stringValue
         default:
+            if let dyn = DynamicToolSynthesizer.shared.getTool(id: name) {
+                category = .shell
+                target = dyn.name
+                break
+            }
             audit.record(category: .shell, action: name, target: "", decision: .deny,
                          reason: "unknown tool")
             return ToolResult(output: "Unknown tool: \(name)", isError: true, exitCode: nil)
@@ -1326,7 +1384,24 @@ final class ToolExecutor: @unchecked Sendable {
             return await fixCode(input: input)
         case "code_plan":
             return await planCode(input: input)
+        case "tool_synthesize":
+            return runToolSynthesize(input: input)
+        case "tool_list_dynamic":
+            return runToolListDynamic()
+        case "tool_run_dynamic":
+            return await runToolRunDynamic(input: input)
         default:
+            if let _ = DynamicToolSynthesizer.shared.getTool(id: name) {
+                var args: [String: String] = [:]
+                if case .object(let dict) = input {
+                    for (k, v) in dict {
+                        if let s = v.stringValue { args[k] = s }
+                        else if let n = v.numberValue { args[k] = "\(n)" }
+                        else if let b = v.boolValue { args[k] = "\(b)" }
+                    }
+                }
+                return await DynamicToolSynthesizer.shared.executeTool(id: name, arguments: args)
+            }
             return ToolResult(output: "Unknown tool: \(name)", isError: true, exitCode: nil)
         }
     }
@@ -1732,10 +1807,21 @@ final class ToolExecutor: @unchecked Sendable {
         guard let element = input["element_description"]?.stringValue, !element.isEmpty else {
             return ToolResult(output: "Argumen 'element_description' diperlukan.", isError: true, exitCode: 1)
         }
-        let expected = input["expected_result"]?.stringValue ?? "\(element) berhasil diklik"
+        let expected = input["expected_result"]?.stringValue ?? "\(element) berhasil dijalankan"
         let app = input["app"]?.stringValue
+        let rawAction = input["action"]?.stringValue ?? "click"
+        let actionType = CUAActionType(rawValue: rawAction) ?? .click
+        let textToType = input["text_to_type"]?.stringValue
+
         do {
-            let res = try await VisualGroundingEngine.shared.clickAndVerify(element: element, expectedResult: expected, inApp: app)
+            let res = try await VisualGroundingEngine.shared.executeClosedLoopAction(
+                goal: expected,
+                elementDescription: element,
+                actionType: actionType,
+                textToType: textToType,
+                inApp: app,
+                maxRetries: 2
+            )
             let status = res.passed ? "CUA ACTION BERHASIL [PASSED]" : "CUA ACTION BELUM SELESAI [INCOMPLETE]"
             return ToolResult(output: "\(status): \(res.observation) (Confidence: \(Int(res.confidence * 100))%)", isError: !res.passed, exitCode: res.passed ? 0 : 1)
         } catch {
@@ -2287,6 +2373,69 @@ final class ToolExecutor: @unchecked Sendable {
         case .string(let s): return Int(s)
         default:             return nil
         }
+    }
+
+    // MARK: - Dynamic Tool Synthesizer Handlers
+
+    private func runToolSynthesize(input: JSONValue) -> ToolResult {
+        guard let id = input["id"]?.stringValue, !id.isEmpty,
+              let name = input["name"]?.stringValue, !name.isEmpty,
+              let script = input["script_source"]?.stringValue, !script.isEmpty else {
+            return ToolResult(output: "Argumen 'id', 'name', dan 'script_source' diperlukan untuk tool_synthesize.", isError: true, exitCode: 1)
+        }
+        let desc = input["description"]?.stringValue ?? "Dynamic tool"
+        let rawLang = input["language"]?.stringValue ?? "bash"
+        let lang = DynamicToolLanguage(rawValue: rawLang.lowercased()) ?? .bash
+        var params: [String] = []
+        if let arr = input["parameter_names"]?.arrayValue {
+            params = arr.compactMap { $0.stringValue }
+        }
+
+        let result = DynamicToolSynthesizer.shared.registerTool(
+            id: id,
+            name: name,
+            description: desc,
+            language: lang,
+            scriptSource: script,
+            parameterNames: params
+        )
+
+        switch result {
+        case .success(let tool):
+            return ToolResult(
+                output: "Alat baru '\(tool.name)' (ID: \(tool.id)) berbahasa \(tool.language.displayName) berhasil disintesis dan siap digunakan di sandbox.",
+                isError: false,
+                exitCode: 0
+            )
+        case .failure(let err):
+            return ToolResult(output: "Gagal mensintesis alat: \(err.localizedDescription)", isError: true, exitCode: 1)
+        }
+    }
+
+    private func runToolListDynamic() -> ToolResult {
+        let tools = DynamicToolSynthesizer.shared.allTools
+        if tools.isEmpty {
+            return ToolResult(output: "Belum ada dynamic tool yang disintesis.", isError: false, exitCode: 0)
+        }
+        let lines = tools.map { t in
+            "• [\(t.id)] \(t.name) (\(t.language.rawValue)): \(t.description) | Dipanggil: \(t.executionCount)x"
+        }.joined(separator: "\n")
+        return ToolResult(output: "Daftar Alat Dinamis (Dynamic Tools):\n" + lines, isError: false, exitCode: 0)
+    }
+
+    private func runToolRunDynamic(input: JSONValue) async -> ToolResult {
+        guard let id = input["id"]?.stringValue, !id.isEmpty else {
+            return ToolResult(output: "Argumen 'id' diperlukan untuk tool_run_dynamic.", isError: true, exitCode: 1)
+        }
+        var args: [String: String] = [:]
+        if let obj = input["arguments"]?.objectValue {
+            for (k, v) in obj {
+                if let s = v.stringValue { args[k] = s }
+                else if let n = v.numberValue { args[k] = "\(n)" }
+                else if let b = v.boolValue { args[k] = "\(b)" }
+            }
+        }
+        return await DynamicToolSynthesizer.shared.executeTool(id: id, arguments: args)
     }
 }
 

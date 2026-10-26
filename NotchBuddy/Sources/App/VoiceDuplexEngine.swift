@@ -132,6 +132,7 @@ public final class VoiceDuplexEngine: ObservableObject {
         VoiceManager.shared.stopSpeaking()
         isInterrupted = true
         SoundEngine.shared.play("tick")
+        NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
 
         // Mulai transkripsi suara pengguna
         VoiceManager.shared.startPTT()
@@ -144,5 +145,13 @@ public final class VoiceDuplexEngine: ObservableObject {
     /// Menyesuaikan nada emosional asisten berdasarkan jenis pekerjaan.
     public func setTone(_ tone: EmotionalTone) {
         self.emotionalTone = tone
+        switch tone {
+        case .attentive:
+            AppState.shared.stateOverride = nil
+        case .focused:
+            AppState.shared.stateOverride = .thinking
+        case .caution:
+            AppState.shared.stateOverride = .approval
+        }
     }
 }

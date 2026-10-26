@@ -66,7 +66,7 @@ public final class SmartIntentRouter: @unchecked Sendable {
     }
 
     /// Menentukan provider dan model terbaik berdasarkan query dan status provider yang terdaftar.
-    public func selectExecution(
+    func selectExecution(
         for query: String,
         activeProvider: any LLMProvider,
         activeModel: String

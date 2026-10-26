@@ -10,6 +10,15 @@ public struct GroundedElement: Sendable, Codable {
     public var label: String
 }
 
+public enum CUAActionType: String, Sendable, CaseIterable {
+    case click = "click"
+    case doubleClick = "double_click"
+    case rightClick = "right_click"
+    case typeText = "type_text"
+    case pressKey = "press_key"
+    case scroll = "scroll"
+}
+
 public final class VisualGroundingEngine: @unchecked Sendable {
     public static let shared = VisualGroundingEngine()
 
@@ -79,20 +88,95 @@ public final class VisualGroundingEngine: @unchecked Sendable {
         return GroundedElement(x: Double(fallbackPoint.x), y: Double(fallbackPoint.y), confidence: 0.3, label: "\(query) (tengah layar)")
     }
 
-    /// Closed-Loop Driving: Cari elemen, klik koordinat, lalu verifikasi hasil visualnya.
+    /// Closed-Loop Driving: Cari elemen, jalankan aksi OS, lalu verifikasi hasil visualnya dengan koreksi mandiri.
     public func clickAndVerify(element: String, expectedResult: String, inApp: String? = nil) async throws -> VisualVerificationResult {
-        // Step 1: Cari koordinat
-        let grounded = try await locateElement(query: element, inApp: inApp)
-        let point = CGPoint(x: grounded.x, y: grounded.y)
+        return try await executeClosedLoopAction(
+            goal: expectedResult,
+            elementDescription: element,
+            actionType: .click,
+            inApp: inApp,
+            maxRetries: 2
+        )
+    }
 
-        // Step 2: Lakukan klik OS
-        try control.click(at: point)
+    /// Closed-Loop Execution Engine dengan Self-Healing:
+    /// Menjalankan siklus Look -> Plan -> Act -> Verify -> Self-Heal hingga kondisi visual yang diharapkan tercapai.
+    public func executeClosedLoopAction(
+        goal: String,
+        elementDescription: String,
+        actionType: CUAActionType = .click,
+        textToType: String? = nil,
+        inApp: String? = nil,
+        maxRetries: Int = 2
+    ) async throws -> VisualVerificationResult {
+        var lastResult: VisualVerificationResult? = nil
 
-        // Jeda 500ms agar UI merespons
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        for attempt in 1...max(1, maxRetries) {
+            try control.checkAborted()
 
-        // Step 3: Verifikasi Visual Hasilnya
-        return try await VisualVerificationService.shared.verify(goal: expectedResult, appName: inApp)
+            // 1. Look: Cari elemen UI
+            let grounded = try await locateElement(query: elementDescription, inApp: inApp)
+            let point = CGPoint(x: grounded.x, y: grounded.y)
+
+            // 2. Act: Jalankan aksi tingkat OS via CoreGraphics
+            switch actionType {
+            case .click:
+                let clickCount = attempt > 1 ? 2 : 1
+                try control.click(at: point, button: .left, clickCount: clickCount)
+            case .doubleClick:
+                try control.click(at: point, button: .left, clickCount: 2)
+            case .rightClick:
+                try control.click(at: point, button: .right, clickCount: 1)
+            case .typeText:
+                try control.click(at: point, button: .left, clickCount: 1)
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                if let text = textToType, !text.isEmpty {
+                    try control.typeText(text)
+                }
+            case .pressKey:
+                let key = textToType ?? "return"
+                try control.pressKey(named: key)
+            case .scroll:
+                try control.scroll(deltaY: -5)
+            }
+
+            // Jeda 600ms agar UI merespons perubahan state
+            try? await Task.sleep(nanoseconds: 600_000_000)
+
+            // 3. Verify: Periksa apakah kondisi visual goal tercapai
+            let verification = try await VisualVerificationService.shared.verify(goal: goal, appName: inApp)
+            lastResult = verification
+
+            if verification.passed {
+                return verification
+            }
+
+            // 4. Self-Healing fallback jika attempt belum habis:
+            // Jika klik CoreGraphics tidak mengubah UI, coba trigger via Accessibility API langsung
+            if attempt < maxRetries {
+                if let snap = try? axClient.snapshot() {
+                    let lowerDesc = elementDescription.lowercased()
+                    if let matchIdx = snap.elements.firstIndex(where: {
+                        $0.label.lowercased().contains(lowerDesc) || $0.role.lowercased().contains(lowerDesc)
+                    }) {
+                        _ = try? axClient.perform(.press(index: matchIdx))
+                        try? await Task.sleep(nanoseconds: 600_000_000)
+                        let axVerification = try await VisualVerificationService.shared.verify(goal: goal, appName: inApp)
+                        if axVerification.passed {
+                            return axVerification
+                        }
+                        lastResult = axVerification
+                    }
+                }
+            }
+        }
+
+        return lastResult ?? VisualVerificationResult(
+            passed: false,
+            confidence: 0.0,
+            observation: "Aksi visual gagal mencapai goal setelah \(maxRetries) percobaan.",
+            screenshotPath: ""
+        )
     }
 
     // MARK: - Private Helpers

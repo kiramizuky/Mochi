@@ -277,29 +277,12 @@ public final class FileSystemWatcher: @unchecked Sendable {
             onFileEvent(event)
         }
 
-        Task { @MainActor in
-            let chip = ProactiveChip(
-                id: "fswatch_\(UUID().uuidString.prefix(8))",
-                text: event.suggestedActionText,
-                fact: event.suggestedGoal
-            )
-
-            // Masukkan rekomendasi baru di posisi paling atas Proactive Chips
-            var currentChips = AppState.shared.proactiveChips
-            currentChips.removeAll { $0.text == chip.text }
-            currentChips.insert(chip, at: 0)
-            AppState.shared.proactiveChips = currentChips
-
-            // Beri respon visual lembut pada Mochi di notch
-            AppState.shared.stateOverride = .happy
-            SoundEngine.shared.play("blip")
-
-            // Kembalikan status ekspresi normal setelah 2.5 detik
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            if AppState.shared.stateOverride == .happy {
-                AppState.shared.stateOverride = nil
-            }
-        }
+        SensoryEventHub.shared.registerProactiveTrigger(
+            id: "fswatch_\(UUID().uuidString.prefix(8))",
+            title: event.suggestedActionText,
+            goal: event.suggestedGoal,
+            priority: event.fileType == .invoice ? .high : .medium
+        )
     }
 }
 

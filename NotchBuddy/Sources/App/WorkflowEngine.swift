@@ -133,7 +133,7 @@ final class WorkflowEngine: @unchecked Sendable {
 
         do {
             let response = try await activeProvider.complete(request)
-            var raw = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            var raw = response.text.trimmingCharacters(in: .whitespacesAndNewlines)
 
             // Ekstrak isi JSON jika model membungkus dengan markdown
             if raw.contains("```") {

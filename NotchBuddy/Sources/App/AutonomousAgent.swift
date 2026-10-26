@@ -46,6 +46,38 @@ final class AutonomousAgent: @unchecked Sendable {
             AppState.shared.view = .prompt
         }
 
+        // Periksa apakah query membutuhkan Multi-Agent Swarm (kolaborasi antar-spesialis)
+        if Self.shouldUseSwarm(for: goal) {
+            let orchestration = await AgentOrchestrator.shared.run(goal: goal, model: "")
+            let success = orchestration.success
+            let transcript = orchestration.transcript
+
+            await MainActor.run {
+                if let idx = AppState.shared.autonomousTasks.firstIndex(where: { $0.id == taskId }) {
+                    var t = AppState.shared.autonomousTasks[idx]
+                    t.status = success ? .completed : .failed
+                    t.note = transcript
+                    t.updatedAt = .now
+                    AppState.shared.autonomousTasks[idx] = t
+                }
+                AppState.shared.stateOverride = nil
+                AppState.shared.view = .prompt
+
+                var reply = success
+                    ? "🐝 Swarm Selesai: \(goal)\n\(transcript)"
+                    : "⚠️ Swarm Gagal Sebagian: \(goal)\n\(transcript)"
+                if let artifact = orchestration.artifact {
+                    reply += "\n\n📄 Hasil interaktif telah disajikan di Canvas Studio (\(artifact.type.displayName): \(artifact.title))."
+                }
+                AppState.shared.chatHistory.append(ChatMessage(role: .assistant, content: reply))
+            }
+
+            lockQueue.sync {
+                if runningTaskId == taskId { runningTaskId = nil }
+            }
+            return taskId
+        }
+
         // 1. Rencanakan langkah secara otonom via LLM Planner (dengan fallback cerdas)
         let steps = await engine.planAutonomous(goal: goal)
 
@@ -73,6 +105,18 @@ final class AutonomousAgent: @unchecked Sendable {
         let outputs = results.map { $0.output }.joined(separator: "\n")
         let errors = results.compactMap { $0.error }.joined(separator: "\n")
 
+        // Jika output terstruktur dokumen/tabel/kode, buka di Canvas Studio
+        let detectedArtifact = success ? AgentOrchestrator.detectArtifact(from: outputs, goal: goal) : nil
+        let canvasNote: String
+        if let artifact = detectedArtifact {
+            await MainActor.run {
+                CanvasManager.shared.present(artifact: artifact)
+            }
+            canvasNote = "\n\n📄 Hasil telah disajikan di Canvas Studio (\(artifact.type.displayName): \(artifact.title))."
+        } else {
+            canvasNote = ""
+        }
+
         await MainActor.run {
             if let idx = AppState.shared.autonomousTasks.firstIndex(where: { $0.id == taskId }) {
                 var t = AppState.shared.autonomousTasks[idx]
@@ -85,7 +129,7 @@ final class AutonomousAgent: @unchecked Sendable {
             AppState.shared.view = .prompt
             // Tambah pesan asisten ke chat history agar user melihat hasil.
             let reply = success
-                ? "Selesai: \(goal)\n\(outputs)"
+                ? "Selesai: \(goal)\n\(outputs)\(canvasNote)"
                 : "Gagal sebagian: \(goal)\n\(errors.isEmpty ? outputs : errors)"
             AppState.shared.chatHistory.append(ChatMessage(role: .assistant, content: reply))
         }
@@ -95,6 +139,17 @@ final class AutonomousAgent: @unchecked Sendable {
         }
 
         return taskId
+    }
+
+    /// Mengecek apakah suatu query/tujuan memerlukan koordinasi Multi-Agent Swarm (kolaborasi spesialis).
+    static func shouldUseSwarm(for goal: String) -> Bool {
+        let g = goal.lowercased()
+        let swarmKeywords = [
+            "swarm", "tim agen", "spesialis", "multi-agent",
+            "riset dan analisis", "bandingkan dan susun", "analisis dan buatkan laporan",
+            "lakukan studi", "teliti dan rangkum", "investigasi dan tulis dokumen"
+        ]
+        return swarmKeywords.contains(where: { g.contains($0) })
     }
 
     /// Batalkan tugas otonom yang sedang berjalan (jika ada).

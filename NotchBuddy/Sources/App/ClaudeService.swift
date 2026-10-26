@@ -205,7 +205,7 @@ final class ClaudeService {
         } catch {
             // Fallback otomatis ke Cloud LLM jika eksekusi Edge SLM gagal/offline
             if route.tier == .localSLM && activeExecutorProvider.id != self.provider.id && self.provider.isConfigured() {
-                AppLog.shared.log("Edge SLM tidak responsif (\(error.localizedDescription)). Melakukan fallback ke Cloud LLM...")
+                appendAppLog("nb.log", "Edge SLM tidak responsif (\(error.localizedDescription)). Melakukan fallback ke Cloud LLM...")
                 let fallbackAgent = AgentController(
                     provider: self.provider,
                     system: system,
