@@ -162,8 +162,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Handle openFullSettings from notch UI
-        NotificationCenter.default.addObserver(forName: .openFullSettings, object: nil, queue: .main) { [weak self] _ in
-            self?.openSettings()
+        NotificationCenter.default.addObserver(forName: .openFullSettings, object: nil, queue: .main) { [weak self] note in
+            let tabName = note.userInfo?["tab"] as? String
+            Task { @MainActor in
+                if let tabName, let tab = SettingsTab(rawValue: tabName) {
+                    AppState.shared.selectedSettingsTab = tab
+                }
+                self?.openSettings()
+            }
         }
     }
 

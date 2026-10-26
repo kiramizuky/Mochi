@@ -638,6 +638,9 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(Int(hotkeyCode), forKey: "hotkeyCode") }
     }
 
+    // Tab pengaturan aktif (untuk navigasi langsung dari Island ke Full Settings Window)
+    @Published var selectedSettingsTab: SettingsTab = .general
+
     // Onboarding selesai? Saat pertama kali diluncurkan → false, Settings
     // menampilkan alur onboarding (API key, izin, mode autopilot).
     @Published var hasOnboarded: Bool = UserDefaults.standard.bool(forKey: "hasOnboarded") {

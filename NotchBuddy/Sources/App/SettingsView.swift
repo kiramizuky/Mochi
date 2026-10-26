@@ -201,6 +201,7 @@ struct SettingsView: View {
             Text("Versi \(updateAvailable?.version ?? "?"): \(updateAvailable?.notes ?? "")")
         }
         .onAppear {
+            selectedTab = state.selectedSettingsTab
             accessibilityGranted = AXIsProcessTrusted()
             selectedProviderId = ProviderRegistry.shared.activeProviderId
             apiKey = KeychainStore.shared.get("\(selectedProviderId)-api-key") ?? ""
@@ -220,6 +221,18 @@ struct SettingsView: View {
                     guard selectedProviderId == providerId else { return }
                     fetchedModels = models
                     syncModelChoice()
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openFullSettings)) { notification in
+            if let tabName = notification.userInfo?["tab"] as? String,
+               let tab = SettingsTab(rawValue: tabName) {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    selectedTab = tab
+                }
+            } else {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    selectedTab = state.selectedSettingsTab
                 }
             }
         }
@@ -477,13 +490,7 @@ struct SettingsView: View {
                         .font(.system(size: 11, weight: .semibold))
 
                     HStack(spacing: 6) {
-                        Button("😊 Senang") { state.stateOverride = .happy }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
                         Button("🤔 Berpikir") { state.stateOverride = .thinking }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        Button("😲 Terkejut") { state.stateOverride = .surprised }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                         Button("❓ Tanya") { state.stateOverride = .question }
@@ -492,7 +499,13 @@ struct SettingsView: View {
                         Button("💻 Bekerja") { state.stateOverride = .working }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
+                        Button("🔍 Cari") { state.stateOverride = .searching }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         Button("😴 Tidur") { state.stateOverride = .sleeping }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        Button("💫 Pusing") { state.stateOverride = .dizzy }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                     }
@@ -694,7 +707,7 @@ struct SettingsView: View {
                             .frame(width: 40, alignment: .trailing)
                             .monospacedDigit()
                         Button("Tes Bunyi") {
-                            SoundEngine.shared.playPop()
+                            SoundEngine.shared.play("pop")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -708,13 +721,17 @@ struct SettingsView: View {
 
     private var currentEmoteSymbol: String {
         switch state.effectiveState {
-        case .happy:     return "😊"
         case .thinking:  return "🤔"
-        case .surprised: return "😲"
         case .question:  return "❓"
         case .working:   return "💻"
+        case .searching: return "🔍"
         case .sleeping:  return "😴"
-        default:         return "🐱"
+        case .dizzy:     return "💫"
+        case .error:     return "⚠️"
+        case .finished:  return "✅"
+        case .ratelimit: return "⏳"
+        case .approval:  return "✋"
+        case .idle:      return "🐱"
         }
     }
 
@@ -1434,11 +1451,19 @@ struct SettingsView: View {
 
                         Spacer()
 
-                        Button(telegramRunning ? "Hentikan Layanan" : "Mulai Layanan") {
-                            toggleTelegramGateway()
+                        if telegramRunning {
+                            Button("Hentikan Layanan") {
+                                toggleTelegramGateway()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        } else {
+                            Button("Mulai Layanan") {
+                                toggleTelegramGateway()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(telegramRunning ? .bordered : .borderedProminent)
-                        .controlSize(.small)
                     }
                 }
                 .padding(6)

@@ -3306,39 +3306,70 @@ struct SettingsIslandView: View {
     var body: some View {
         ZStack(alignment: .leading) {
             CardBackground(wash: nil)
-            VStack(alignment: .leading, spacing: 10) {
-                // Sound row
-                HStack(spacing: 10) {
-                    Toggle("", isOn: $state.soundEnabled)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                        .scaleEffect(0.75)
-                        .frame(width: 44)
-                    Text("Sound")
-                        .font(.system(size: 12.5))
-                        .foregroundColor(Color(hex: "#C5C8CD"))
-                    Slider(value: $state.soundVolume, in: 0...0.2)
-                        .frame(width: 72)
-                        .opacity(state.soundEnabled ? 1 : 0.4)
-                }
-
-                // Auto-close row
-                HStack(spacing: 10) {
-                    Image(systemName: "timer")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(hex: "#8E939C"))
-                        .frame(width: 16)
-                    Text("Auto-close · \(Int(state.autoCloseInterval))s")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(hex: "#C5C8CD"))
-                    Spacer()
+            VStack(alignment: .leading, spacing: 8) {
+                // Header: Quick Jump Tabs
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
+                        ForEach(SettingsTab.allCases) { tab in
+                            Button(action: {
+                                state.selectedSettingsTab = tab
+                                NotificationCenter.default.post(
+                                    name: .openFullSettings,
+                                    object: nil,
+                                    userInfo: ["tab": tab.rawValue]
+                                )
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: tab.icon)
+                                        .font(.system(size: 10))
+                                    Text(tab.rawValue)
+                                        .font(.system(size: 10.5, weight: .medium))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color(hex: "#22252C"))
+                                .foregroundColor(Color(hex: "#E0E3E8"))
+                                .clipShape(Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+                .frame(maxWidth: .infinity)
+
+                // Sound & Auto-Close Row
+                HStack(spacing: 12) {
+                    HStack(spacing: 6) {
+                        Toggle("", isOn: $state.soundEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .scaleEffect(0.7)
+                            .frame(width: 38)
+                        Text("Suara")
+                            .font(.system(size: 11.5))
+                            .foregroundColor(Color(hex: "#C5C8CD"))
+                        Slider(value: $state.soundVolume, in: 0...0.2)
+                            .frame(width: 58)
+                            .opacity(state.soundEnabled ? 1 : 0.4)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "timer")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: "#8E939C"))
+                        Text("\(Int(state.autoCloseInterval))s")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: "#C5C8CD"))
                         ForEach([10, 15, 30], id: \.self) { s in
                             Button("\(s)s") {
                                 state.autoCloseInterval = Double(s)
                             }
-                            .font(.system(size: 11))
-                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .font(.system(size: 10))
+                            .padding(.horizontal, 5).padding(.vertical, 2)
                             .background(state.autoCloseInterval == Double(s) ? Color(hex: "#252830") : Color.clear)
                             .foregroundColor(state.autoCloseInterval == Double(s) ? Color(hex: "#F5F6F8") : Color(hex: "#6B7079"))
                             .clipShape(Capsule())
@@ -3347,13 +3378,14 @@ struct SettingsIslandView: View {
                     }
                 }
 
-                // Connection status
-                HStack(spacing: 12) {
+                // Footer: Status Badges & Full Settings Window Link
+                HStack(spacing: 10) {
                     Button(action: {
-                        NotificationCenter.default.post(name: .openFullSettings, object: nil)
+                        state.selectedSettingsTab = .integrations
+                        NotificationCenter.default.post(name: .openFullSettings, object: nil, userInfo: ["tab": SettingsTab.integrations.rawValue])
                     }) {
                         StatusBadge(
-                            label: claudeConnected ? "Claude Code" : "Claude (Not Linked)",
+                            label: claudeConnected ? "Claude Code" : "Claude Off",
                             status: claudeConnected ? .active : .inactive
                         )
                     }
@@ -3361,7 +3393,8 @@ struct SettingsIslandView: View {
 
                     let activeProv = ProviderRegistry.shared.activeProvider
                     Button(action: {
-                        NotificationCenter.default.post(name: .openFullSettings, object: nil)
+                        state.selectedSettingsTab = .models
+                        NotificationCenter.default.post(name: .openFullSettings, object: nil, userInfo: ["tab": SettingsTab.models.rawValue])
                     }) {
                         StatusBadge(
                             label: "\(activeProv.displayName) API",
@@ -3371,17 +3404,23 @@ struct SettingsIslandView: View {
                     .buttonStyle(.plain)
 
                     Spacer()
-                    Button("Settings…") {
+
+                    Button(action: {
                         NotificationCenter.default.post(name: .openFullSettings, object: nil)
+                    }) {
+                        HStack(spacing: 4) {
+                            Text("Buka Jendela Pengaturan")
+                            Image(systemName: "arrow.up.forward.app")
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundColor(Color.accentColor)
                     }
-                    .font(.system(size: 11.5))
-                    .foregroundColor(Color(hex: "#8E939C"))
                     .buttonStyle(.plain)
                 }
             }
             .padding(.leading, 84)
             .padding(.trailing, 16)
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
         }
     }
 }
