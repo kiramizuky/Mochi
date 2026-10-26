@@ -1,6 +1,6 @@
 # RFC 0001 — Phase 5 foundation: policy, audit, consent, and kill switch
 
-- **Status:** Review
+- **Status:** Implemented
 - **Author:** Coucou Windows
 - **Reviewers:** security, Windows maintainers
 - **Created:** 2026-10-26

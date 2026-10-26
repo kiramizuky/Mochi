@@ -10,11 +10,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Coucou", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, "pause", "Pause", true, None::<&str>)?;
+    let stop_automation = MenuItem::with_id(app, "kill_automation", "Stop all automation", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
+    let sep3 = PredefinedMenuItem::separator(app)?;
 
-    let menu = Menu::with_items(app, &[&open, &sep1, &settings, &pause, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &sep1, &settings, &pause, &sep2, &stop_automation, &sep3, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("coucou")
         .tooltip("Coucou")
@@ -22,6 +24,9 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app: &AppHandle, event| match event.id.as_ref() {
             "quit" => app.exit(0),
             "settings" => crate::show_settings_window(app),
+            "kill_automation" => {
+                let _ = crate::security::kill(Some(app));
+            }
             id => {
                 let _ = app.emit_to(WINDOW_LABEL, "tray", id.to_string());
             }

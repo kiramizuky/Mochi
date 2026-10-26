@@ -11,6 +11,7 @@ mod log;
 mod pipe;
 mod providers;
 mod secrets;
+mod security;
 mod settings;
 mod smoke;
 mod tray;
@@ -249,6 +250,15 @@ fn hooks_apply(
     // The fingerprint comes from the preview the user actually looked at, so a
     // settings.json that changed in between is refused rather than overwritten.
     let backup = hooks::write(install, &fingerprint)?;
+    security::record(&security::AuditEntry {
+        event: "action_succeeded".into(),
+        capability: Some("fs.write".into()),
+        scope: Some("settings.json".into()),
+        target: Some("~/.claude/settings.json".into()),
+        decision: "allow".into(),
+        rule: "user_action".into(),
+        outcome: if install { "installed" } else { "uninstalled" }.into(),
+    });
     let updated = {
         let mut current = shared.settings.lock().unwrap();
         current.hooks_installed = install;
@@ -337,12 +347,36 @@ fn secret_present(key: String) -> bool {
 
 #[tauri::command]
 fn secret_set(key: String, value: String) -> Result<(), String> {
-    secrets::set(&key, &value)
+    let res = secrets::set(&key, &value);
+    if res.is_ok() {
+        security::record(&security::AuditEntry {
+            event: "action_succeeded".into(),
+            capability: Some("security.credential".into()),
+            scope: None,
+            target: Some(key),
+            decision: "allow".into(),
+            rule: "user_action".into(),
+            outcome: "set".into(),
+        });
+    }
+    res
 }
 
 #[tauri::command]
 fn secret_clear(key: String) -> Result<(), String> {
-    secrets::clear(&key)
+    let res = secrets::clear(&key);
+    if res.is_ok() {
+        security::record(&security::AuditEntry {
+            event: "action_succeeded".into(),
+            capability: Some("security.credential".into()),
+            scope: None,
+            target: Some(key),
+            decision: "allow".into(),
+            rule: "user_action".into(),
+            outcome: "cleared".into(),
+        });
+    }
+    res
 }
 
 /// Opens the configured n8n instance — the URL lives in the Credential Manager.
@@ -562,8 +596,17 @@ pub fn run() {
             set_paused,
             update_check,
             update_install,
+            security::security_status,
+            security::security_set_capability,
+            security::security_consent_decide,
+            security::security_kill,
+            security::security_resume,
+            security::audit_recent,
+            security::audit_export,
+            security::audit_open_folder,
         ])
         .setup(move |app| {
+            security::init_killswitch();
             let handle = app.handle().clone();
             tray::build(&handle)?;
             // Before the island: see create_settings_window.

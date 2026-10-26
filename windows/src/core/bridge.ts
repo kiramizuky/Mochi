@@ -138,6 +138,21 @@ export const Bridge = {
    * Windows shows the NSIS progress bar and restarts the app afterwards.
    */
   updatesInstall: () => callOrThrow<void>("update_install"),
+
+  // ── Security & Audit (Phase 5.0) ──────────────────────────────────────────
+  securityStatus: () => call<SecurityStatus>("security_status"),
+  securitySetCapability: (capability: string, mode: GrantMode, scopes: Scope[]) =>
+    callOrThrow<void>("security_set_capability", { capability, mode, scopes }),
+  securityConsentDecide: (
+    id: string,
+    argsHash: string,
+    decision: "allowOnce" | "allowSession" | "deny",
+  ) => callOrThrow<void>("security_consent_decide", { id, argsHash, decision }),
+  securityKill: () => callOrThrow<void>("security_kill"),
+  securityResume: () => callOrThrow<void>("security_resume"),
+  auditRecent: (limit?: number) => call<AuditEventItem[]>("audit_recent", { limit }),
+  auditExport: () => callOrThrow<string>("audit_export"),
+  auditOpenFolder: () => callOrThrow<void>("audit_open_folder"),
 };
 
 export interface IntegrationUpdate {
@@ -235,6 +250,45 @@ export interface HookPreview {
   settingsPath: string;
   /** Hand back to hooksApply so only the reviewed diff is ever written. */
   fingerprint: string;
+}
+
+export type GrantMode = "denied" | "session" | "always";
+
+export type Scope =
+  | { kind: "folder"; path: string }
+  | { kind: "window"; process: string }
+  | { kind: "recipient"; id: string };
+
+export interface CapabilityInfo {
+  id: string;
+  label: string;
+  mode: GrantMode;
+  scopes: Scope[];
+  isHighRisk: boolean;
+}
+
+export interface SecurityStatus {
+  automationEnabled: boolean;
+  killSwitchEngaged: boolean;
+  statusReason: string;
+  capabilities: CapabilityInfo[];
+  recentDenials24h: number;
+}
+
+export interface AuditEventItem {
+  v: number;
+  ts: string;
+  id: string;
+  event: string;
+  capability?: string;
+  scope?: string;
+  target?: string;
+  decision: string;
+  rule: string;
+  outcome: string;
+  app: string;
+  prev: string;
+  mac: string;
 }
 
 /** Same as `call`, but surfaces the error so the UI can show what went wrong. */

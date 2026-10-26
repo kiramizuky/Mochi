@@ -1085,6 +1085,161 @@ function crashSection(initial: CrashReport[]): HTMLElement {
   );
 }
 
+// ── Security & Policy section (Phase 5.0) ─────────────────────────────────────
+
+function securitySection(): HTMLElement {
+  const body = h("div", { style: "display:flex;flex-direction:column;gap:14px" });
+  const section = h("section", {}, h("h2", {}, h("span", { text: "Security & Policy" })), body);
+
+  async function draw() {
+    clear(body);
+    const status = await Bridge.securityStatus();
+    if (!status) {
+      body.append(h("div", { class: "notice warn", text: "Security subsystem unavailable." }));
+      return;
+    }
+
+    // Automation status and kill switch
+    const statusRow = h("div", { class: "row", style: "justify-content:space-between" },
+      h("div", { style: "display:flex;align-items:center;gap:8px" },
+        statusDot(status.automationEnabled),
+        h("span", { style: "font-weight:500", text: status.statusReason }),
+      ),
+      status.killSwitchEngaged
+        ? h("button", {
+            class: "primary",
+            text: "Resume automation",
+            onclick: async () => {
+              await Bridge.securityResume();
+              void draw();
+            },
+          })
+        : h("button", {
+            class: "danger",
+            text: "Stop all automation",
+            onclick: async () => {
+              await Bridge.securityKill();
+              void draw();
+            },
+          }),
+    );
+
+    // Capabilities table
+    const table = h("table", { class: "security-table" });
+    table.append(
+      h("thead", {},
+        h("tr", {},
+          h("th", { text: "Capability" }),
+          h("th", { text: "Status" }),
+          h("th", { text: "Scope" }),
+        ),
+      ),
+    );
+
+    const tbody = h("tbody");
+    for (const cap of status.capabilities) {
+      const modeLabel =
+        cap.mode === "always"
+          ? "Always allowed"
+          : cap.mode === "session"
+            ? "Session only"
+            : "Denied";
+      const badgeCls = `badge ${cap.mode}`;
+      const scopesText =
+        cap.scopes.length === 0
+          ? "Default"
+          : cap.scopes
+              .map((s) => (s.kind === "folder" ? s.path : s.kind === "window" ? s.process : s.id))
+              .join(", ");
+
+      tbody.append(
+        h("tr", {},
+          h("td", {},
+            h("div", { style: "font-weight:500", text: cap.label }),
+            h("code", { style: "font-size:10.5px;color:var(--dim-2)", text: cap.id }),
+          ),
+          h("td", {}, h("span", { class: badgeCls, text: modeLabel })),
+          h("td", { class: "path", text: scopesText }),
+        ),
+      );
+    }
+    table.append(tbody);
+
+    // Audit logs section
+    const auditEvents = (await Bridge.auditRecent(50)) ?? [];
+    const auditContainer = h("div", { style: "display:flex;flex-direction:column;gap:8px" });
+    auditContainer.append(
+      h("div", { style: "display:flex;justify-content:space-between;align-items:center" },
+        h("h3", { style: "font-size:12.5px;font-weight:600", text: "Audit log (last 50 events)" }),
+        h("span", {
+          class: "hint",
+          text: `${status.recentDenials24h} denied in last 24h`,
+        }),
+      ),
+    );
+
+    const auditList = h("div", { class: "audit-list" });
+    if (auditEvents.length === 0) {
+      auditList.append(h("div", { class: "hint", text: "No security audit events recorded yet." }));
+    } else {
+      for (const ev of auditEvents) {
+        const isOk = ev.decision === "allow" || ev.decision === "kill" || ev.decision === "resume";
+        auditList.append(
+          h("div", { class: "audit-item" },
+            statusDot(isOk),
+            h("span", { style: "color:var(--dim-2);min-width:70px", text: ev.event }),
+            h("span", { style: "font-weight:500;min-width:60px", text: ev.decision }),
+            h("span", { style: "color:var(--dim);flex:1 1 auto", text: ev.target ?? ev.capability ?? "" }),
+          ),
+        );
+      }
+    }
+    auditContainer.append(auditList);
+
+    const auditActions = h("div", { class: "row" },
+      h("button", {
+        text: "Export audit log…",
+        onclick: async () => {
+          try {
+            const data = await Bridge.auditExport();
+            if (data) {
+              const blob = new Blob([data], { type: "application/x-jsonlines" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `coucou-audit-${new Date().toISOString().slice(0, 10)}.jsonl`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }
+          } catch (err) {
+            console.error("Failed to export audit log", err);
+          }
+        },
+      }),
+      h("button", {
+        text: "Open audit folder",
+        onclick: () => void Bridge.auditOpenFolder(),
+      }),
+    );
+
+    body.append(
+      h("div", {
+        class: "hint",
+        text: "Phase 5.0 Policy Engine enforces default-deny permissions, tamper-evident local audit chaining, and an instant kill switch for all automated background tasks.",
+      }),
+      statusRow,
+      table,
+      auditContainer,
+      auditActions,
+    );
+  }
+
+  void draw();
+  void onEvent<null>("security_state_changed", () => void draw());
+
+  return section;
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -1129,6 +1284,7 @@ async function main() {
     launcherSection(launchers),
     integrationsSection(present, health),
     generalSection(),
+    securitySection(),
     updateSection(),
     logSection(),
     crashSection(crashes),
