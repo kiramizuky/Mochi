@@ -1,0 +1,185 @@
+name: Windows Release
+
+# Builds a *signed* NSIS installer, verifies every signature, and publishes the
+# installer plus checksums. The ordinary `windows.yml` workflow stays unsigned
+# and is what pull requests run.
+#
+# Required repository secrets (never printed, never uploaded):
+#   WINDOWS_SIGNING_PFX_BASE64   base64 of the Authenticode .pfx
+#   WINDOWS_SIGNING_PFX_PASSWORD password for that .pfx
+#
+# The pfx is imported into the runner's CurrentUser\My store, used through its
+# thumbprint (so no password lands in a command line), and removed afterwards.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Build, sign and publish
+    runs-on: windows-latest
+    environment: windows-release
+    defaults:
+      run:
+        working-directory: windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+
+      - name: Set up Rust (MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: clippy
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows
+
+      - name: Install front-end dependencies
+        run: npm ci
+
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "Tag $env:GITHUB_REF_NAME does not match version $version"
+          }
+
+      - name: Check versions
+        run: node ../scripts/check-versions.mjs
+
+      - name: Check WebView2 arguments
+        run: node ../scripts/check-browser-args.mjs
+
+      - name: Check sound cues
+        run: node ../scripts/gen-sounds.mjs --check
+
+      - name: Type-check the front end
+        run: npm run typecheck
+
+      - name: Front-end tests
+        run: npm test
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Rust lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build the app without bundling (so we can sign first)
+        run: npx tauri build --no-bundle
+
+      - name: App smoke test on the release binary
+        run: npm run smoke:app
+
+      - name: Import the Authenticode certificate
+        shell: pwsh
+        run: |
+          if (-not $env:WINDOWS_SIGNING_PFX_BASE64) { throw "Missing secret WINDOWS_SIGNING_PFX_BASE64" }
+          if (-not $env:WINDOWS_SIGNING_PFX_PASSWORD) { throw "Missing secret WINDOWS_SIGNING_PFX_PASSWORD" }
+          $bytes = [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64)
+          $pfx = Join-Path $env:RUNNER_TEMP "coucou-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, $bytes)
+          $secure = ConvertTo-SecureString $env:WINDOWS_SIGNING_PFX_PASSWORD -AsPlainText -Force
+          $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          # A pfx may contain the whole chain; sign with the leaf that owns the key.
+          $cert = @($imported) |
+            Where-Object { $_.HasPrivateKey } |
+            Sort-Object NotAfter -Descending |
+            Select-Object -First 1
+          if (-not $cert) { throw "The pfx does not contain a certificate with a private key." }
+          "COUCOU_SIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "COUCOU_SIGN_PFX=$pfx" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Write-Host "Imported certificate $($cert.Subject) $($cert.Thumbprint)"
+
+      - name: Sign the relay and the app
+        run: ./scripts/sign.ps1 -Files target/release/coucou-hook.exe,target/release/coucou.exe -RequireSignature
+
+      - name: Bundle the installer around the signed binaries
+        run: npx tauri bundle
+
+      - name: Sign the installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $installer = "target/release/bundle/nsis/Coucou_${version}_x64-setup.exe"
+          if (-not (Test-Path $installer)) { throw "NSIS installer not found at $installer" }
+          ./scripts/sign.ps1 -Files $installer -RequireSignature
+
+      - name: Copy the signed installer and write checksums
+        shell: pwsh
+        run: |
+          node scripts/pack.mjs
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $installer = "release/Coucou-Windows-$version-setup.exe"
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Coucou-Windows-$version-setup.exe" | Set-Content release/SHA256SUMS.txt -Encoding ascii
+          Get-Content release/SHA256SUMS.txt
+
+      - name: Verify every signature and timestamp
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          ./scripts/verify-signature.ps1 `
+            -Files target/release/coucou.exe,target/release/coucou-hook.exe,release/Coucou-Windows-$version-setup.exe `
+            -RequireTimestamp
+
+      - name: Remove the certificate and the pfx
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:COUCOU_SIGN_THUMBPRINT) {
+            Remove-Item "Cert:\CurrentUser\My\$env:COUCOU_SIGN_THUMBPRINT" -Force -ErrorAction SilentlyContinue
+          }
+          if ($env:COUCOU_SIGN_PFX) {
+            Remove-Item $env:COUCOU_SIGN_PFX -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload the signed installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Coucou-Windows-signed-${{ github.sha }}
+          path: |
+            windows/release/Coucou-Windows-*-setup.exe
+            windows/release/Coucou-Windows-*-setup.exe.sha256
+            windows/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish the GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          gh release create $env:GITHUB_REF_NAME `
+            "release/Coucou-Windows-$version-setup.exe" `
+            "release/Coucou-Windows-$version-setup.exe.sha256" `
+            "release/SHA256SUMS.txt" `
+            --title "Coucou $version" `
+            --generate-notes `
+            --verify-tag

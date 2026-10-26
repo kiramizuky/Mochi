@@ -114,7 +114,9 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
         Some(i) => &buf[..i],
         None => &buf[..],
     };
-    let Ok(mut payload) = serde_json::from_slice::<Value>(line) else { return };
+    let Ok(mut payload) = serde_json::from_slice::<Value>(line) else {
+        return;
+    };
     if !payload.is_object() {
         return;
     }
@@ -132,7 +134,11 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
         return;
     }
 
-    let id = format!("{}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed));
+    let id = format!(
+        "{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
     let (tx, mut rx) = mpsc::channel::<Reply>(4);
     {
         let pending = app.state::<Pending>();
@@ -142,7 +148,14 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
     log::line(format!("hook PermissionRequest id={id}"));
     let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
 
+    let waiting = std::time::Instant::now();
     let decision = wait_for_decision(&id, &mut rx).await;
+    if crate::smoke::requested() {
+        log::line(format!(
+            "hook id={id} wait returned after {} ms",
+            waiting.elapsed().as_millis()
+        ));
+    }
     app.state::<Pending>().0.lock().unwrap().remove(&id);
 
     // No decision: say nothing at all. coucou-hook then writes nothing to stdout
@@ -156,8 +169,28 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
 
 /// Two waits: a short one for "the card is up", then the long one for a human.
 async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<String> {
-    match tokio::time::timeout(ACK_TIMEOUT, rx.recv()).await {
-        Ok(Some(Reply::Ack)) => {}
+    wait_for_decision_with(id, rx, ACK_TIMEOUT, DECISION_TIMEOUT).await
+}
+
+/// The timeouts are parameters so the tests can exercise every branch without
+/// waiting 108 seconds. Production always goes through `wait_for_decision`.
+async fn wait_for_decision_with(
+    id: &str,
+    rx: &mut mpsc::Receiver<Reply>,
+    ack_timeout: Duration,
+    decision_timeout: Duration,
+) -> Option<String> {
+    let started = std::time::Instant::now();
+    let verbose = crate::smoke::requested();
+    match tokio::time::timeout(ack_timeout, rx.recv()).await {
+        Ok(Some(Reply::Ack)) => {
+            if verbose {
+                log::line(format!(
+                    "wait id={id} ack after {} ms",
+                    started.elapsed().as_millis()
+                ));
+            }
+        }
         // A click that beats the ack is still a click.
         Ok(Some(Reply::Decision(d))) => {
             log::line(format!("hook id={id} answered {d}"));
@@ -167,25 +200,64 @@ async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<S
             log::line(format!("hook id={id} not shown — terminal takes over"));
             return None;
         }
-        Ok(None) => return None,
+        Ok(None) => {
+            if verbose {
+                log::line(format!(
+                    "wait id={id} channel closed in the ack wait after {} ms",
+                    started.elapsed().as_millis()
+                ));
+            }
+            return None;
+        }
         Err(_) => {
-            log::line(format!("hook id={id} island never acknowledged — terminal takes over"));
+            log::line(format!(
+                "hook id={id} island never acknowledged — terminal takes over"
+            ));
             return None;
         }
     }
 
-    match tokio::time::timeout(DECISION_TIMEOUT, rx.recv()).await {
-        Ok(Some(Reply::Decision(d))) => {
-            log::line(format!("hook id={id} answered {d}"));
-            Some(d)
-        }
-        Ok(Some(Reply::Decline)) => {
-            log::line(format!("hook id={id} released without a decision"));
-            None
-        }
-        _ => {
+    // The island may acknowledge more than once (the card is re-rendered, or a
+    // second listener acks too). An Ack in this phase must never be mistaken for
+    // the decision timeout: keep waiting until the deadline.
+    let deadline = started + decision_timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
             log::line(format!("hook id={id} timed out — terminal takes over"));
-            None
+            return None;
+        }
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            Ok(Some(Reply::Decision(d))) => {
+                log::line(format!("hook id={id} answered {d}"));
+                return Some(d);
+            }
+            Ok(Some(Reply::Decline)) => {
+                log::line(format!("hook id={id} released without a decision"));
+                return None;
+            }
+            Ok(Some(Reply::Ack)) => {
+                if verbose {
+                    log::line(format!(
+                        "wait id={id} duplicate ack after {} ms",
+                        started.elapsed().as_millis()
+                    ));
+                }
+                continue;
+            }
+            Ok(None) => {
+                if verbose {
+                    log::line(format!(
+                        "wait id={id} channel closed in the decision wait after {} ms",
+                        started.elapsed().as_millis()
+                    ));
+                }
+                return None;
+            }
+            Err(_) => {
+                log::line(format!("hook id={id} timed out — terminal takes over"));
+                return None;
+            }
         }
     }
 }
@@ -194,11 +266,21 @@ fn send(app: &AppHandle, request_id: &str, reply: Reply, keep: bool) {
     let sender = {
         let pending = app.state::<Pending>();
         let mut map = pending.0.lock().unwrap();
-        if keep { map.get(request_id).cloned() } else { map.remove(request_id) }
+        if keep {
+            map.get(request_id).cloned()
+        } else {
+            map.remove(request_id)
+        }
     };
     match sender {
         Some(tx) => {
-            let _ = tx.try_send(reply);
+            let result = tx.try_send(reply);
+            if crate::smoke::requested() {
+                match &result {
+                    Ok(()) => log::line(format!("reply id={request_id} queued (keep={keep})")),
+                    Err(err) => log::line(format!("reply id={request_id} failed: {err}")),
+                }
+            }
         }
         None => log::line(format!("reply for id={request_id} — no pending request")),
     }
@@ -218,10 +300,113 @@ pub fn decline(app: &AppHandle, request_id: &str) {
 /// Called by the island's Allow / Deny buttons. Only ever a bare word: turning
 /// it into Claude Code's JSON is coucou-hook's job.
 pub fn answer(app: &AppHandle, request_id: &str, decision: &str) {
-    let word = match decision {
-        "allow" | "always" => "allow",
-        _ => "deny",
-    };
+    let word = decision_word(decision);
     log::line(format!("decision id={request_id} {word}"));
     send(app, request_id, Reply::Decision(word.to_string()), false);
+}
+
+/// Anything that is not an explicit allow becomes a deny. An IPC message typo
+/// must never turn into a permission grant.
+fn decision_word(decision: &str) -> &'static str {
+    match decision {
+        "allow" | "always" => "allow",
+        _ => "deny",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    const ACK: Duration = Duration::from_millis(20);
+    const DECISION: Duration = Duration::from_millis(40);
+
+    fn channel() -> (mpsc::Sender<Reply>, mpsc::Receiver<Reply>) {
+        mpsc::channel(4)
+    }
+
+    #[tokio::test]
+    async fn a_confirmed_card_waits_for_the_human_and_returns_the_click() {
+        let (tx, mut rx) = channel();
+        tx.send(Reply::Ack).await.unwrap();
+        tx.send(Reply::Decision("allow".into())).await.unwrap();
+        let answer = wait_for_decision_with("test", &mut rx, ACK, DECISION).await;
+        assert_eq!(answer.as_deref(), Some("allow"));
+    }
+
+    #[tokio::test]
+    async fn a_click_that_beats_the_ack_is_still_a_click() {
+        let (tx, mut rx) = channel();
+        tx.send(Reply::Decision("deny".into())).await.unwrap();
+        let answer = wait_for_decision_with("test", &mut rx, ACK, DECISION).await;
+        assert_eq!(answer.as_deref(), Some("deny"));
+    }
+
+    #[tokio::test]
+    async fn a_duplicate_ack_does_not_end_the_wait() {
+        let (tx, mut rx) = channel();
+        tx.send(Reply::Ack).await.unwrap();
+        tx.send(Reply::Ack).await.unwrap();
+        tx.send(Reply::Decision("allow".into())).await.unwrap();
+        let answer = wait_for_decision_with("test", &mut rx, ACK, DECISION).await;
+        assert_eq!(answer.as_deref(), Some("allow"));
+    }
+
+    #[tokio::test]
+    async fn a_declined_card_never_waits_for_a_human() {
+        let (tx, mut rx) = channel();
+        tx.send(Reply::Decline).await.unwrap();
+        let started = std::time::Instant::now();
+        let answer = wait_for_decision_with("test", &mut rx, ACK, DECISION).await;
+        assert_eq!(answer, None);
+        assert!(started.elapsed() < ACK, "decline must release immediately");
+    }
+
+    #[tokio::test]
+    async fn an_unacknowledged_card_gives_up_after_the_ack_timeout() {
+        let (_tx, mut rx) = channel();
+        let started = std::time::Instant::now();
+        let answer = wait_for_decision_with("test", &mut rx, ACK, DECISION).await;
+        assert_eq!(answer, None);
+        assert!(started.elapsed() >= ACK);
+        assert!(started.elapsed() < DECISION + ACK);
+    }
+
+    #[tokio::test]
+    async fn an_acknowledged_card_times_out_instead_of_blocking_forever() {
+        let (tx, mut rx) = channel();
+        tx.send(Reply::Ack).await.unwrap();
+        let started = std::time::Instant::now();
+        let answer = wait_for_decision_with("test", &mut rx, ACK, DECISION).await;
+        assert_eq!(answer, None);
+        assert!(started.elapsed() >= DECISION);
+    }
+
+    #[tokio::test]
+    async fn a_dropped_island_releases_the_hook() {
+        let (tx, mut rx) = channel();
+        tx.send(Reply::Ack).await.unwrap();
+        drop(tx);
+        let answer = wait_for_decision_with("test", &mut rx, ACK, DECISION).await;
+        assert_eq!(answer, None);
+    }
+
+    #[test]
+    fn only_an_explicit_allow_is_a_grant() {
+        assert_eq!(decision_word("allow"), "allow");
+        assert_eq!(decision_word("always"), "allow");
+        assert_eq!(decision_word("deny"), "deny");
+        assert_eq!(decision_word("ALLOW"), "deny");
+        assert_eq!(decision_word(""), "deny");
+        assert_eq!(decision_word("yes please"), "deny");
+    }
+
+    #[test]
+    fn the_pipe_name_is_per_user_and_well_formed() {
+        let name = pipe_name();
+        assert!(name.starts_with(r"\\.\pipe\coucou-"), "got {name}");
+        assert!(!name.contains(char::is_whitespace), "got {name}");
+        assert!(name.len() > r"\\.\pipe\coucou-".len());
+    }
 }

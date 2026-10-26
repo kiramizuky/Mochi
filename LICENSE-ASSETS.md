@@ -7,8 +7,12 @@ The [MIT License](LICENSE) covers the **source code** of Coucou. It does **not**
 - the names **“Coucou”** and **“Mochi”**;
 - the **Mochi character** — its design, look, expressions and animations as a character;
 - the **app icon** and **menu bar icon** (`NotchBuddy/Assets.xcassets/`);
-- the **sounds** (`NotchBuddy/Resources/sounds/`);
+- the **macOS sounds** (`NotchBuddy/Resources/sounds/`);
 - the **images, GIFs and videos** in `docs/media/` and `design/`.
+
+The 28 cues in `shared/sounds/` are a different thing: they are original,
+procedurally generated audio for the Windows build, released under CC0 1.0 (see
+`shared/sounds/README.md`). They are not the macOS recordings.
 
 ## What you can do
 

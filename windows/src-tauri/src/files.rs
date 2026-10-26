@@ -40,8 +40,14 @@ pub fn ingest(source: &str) -> Result<DroppedFile, String> {
 
     let mut dest = dir.join(&name);
     if dest.exists() {
-        let stem = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        let ext = src.extension().map(|s| format!(".{}", s.to_string_lossy())).unwrap_or_default();
+        let stem = src
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let ext = src
+            .extension()
+            .map(|s| format!(".{}", s.to_string_lossy()))
+            .unwrap_or_default();
         for i in 2..1000 {
             let candidate = dir.join(format!("{stem} ({i}){ext}"));
             if !candidate.exists() {
@@ -71,12 +77,20 @@ pub fn ingest(source: &str) -> Result<DroppedFile, String> {
 /// with the time it landed, so this really is the age of the copy and not the
 /// age of whatever the user happened to drag in.
 fn sweep(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let now = SystemTime::now();
     for entry in entries.flatten() {
         let Ok(meta) = entry.metadata() else { continue };
-        let Ok(copied) = meta.modified() else { continue };
-        if now.duration_since(copied).map(|age| age > KEEP_FOR).unwrap_or(false) {
+        let Ok(copied) = meta.modified() else {
+            continue;
+        };
+        if now
+            .duration_since(copied)
+            .map(|age| age > KEEP_FOR)
+            .unwrap_or(false)
+        {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -89,12 +103,21 @@ mod tests {
     #[test]
     fn ingest_copies_and_never_overwrites() {
         let tmp = std::env::temp_dir().join(format!("coucou-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
+        // Keep the test out of the real %LOCALAPPDATA%\Coucou\inbox.
+        std::env::set_var("LOCALAPPDATA", &tmp);
+        assert!(
+            inbox_dir().starts_with(&tmp),
+            "the test must not touch the real profile"
+        );
+
         let source = tmp.join("note.txt");
         std::fs::write(&source, b"hello").unwrap();
 
         let first = ingest(source.to_str().unwrap()).unwrap();
         assert_eq!(first.name, "note.txt");
+        assert_eq!(first.size, 5);
         assert_eq!(std::fs::read(&first.path).unwrap(), b"hello");
 
         // A second drop of the same name must not clobber the first copy.
@@ -103,6 +126,18 @@ mod tests {
         assert_ne!(first.path, second.path);
         assert_eq!(std::fs::read(&first.path).unwrap(), b"hello");
         assert_eq!(std::fs::read(&second.path).unwrap(), b"second");
+
+        // Unicode names survive the copy and the collision suffix.
+        let unicode = tmp.join("café 日本語.txt");
+        std::fs::write(&unicode, b"unicode").unwrap();
+        let u1 = ingest(unicode.to_str().unwrap()).unwrap();
+        let u2 = ingest(unicode.to_str().unwrap()).unwrap();
+        assert_eq!(u1.name, "café 日本語.txt");
+        assert_ne!(u1.path, u2.path);
+        assert!(std::path::Path::new(&u2.path).exists());
+
+        // A missing source is an error, not a panic.
+        assert!(ingest(tmp.join("nope.txt").to_str().unwrap()).is_err());
 
         // Folders are refused rather than silently ignored.
         assert!(ingest(tmp.to_str().unwrap()).is_err());
@@ -122,10 +157,37 @@ mod tests {
             Path::new(&aged.path).exists(),
             "a file copied just now was swept as if it were a week old"
         );
-        let _ = std::fs::remove_file(&aged.path);
 
         let _ = std::fs::remove_file(&first.path);
         let _ = std::fs::remove_file(&second.path);
+        let _ = std::fs::remove_file(&u1.path);
+        let _ = std::fs::remove_file(&u2.path);
+        let _ = std::fs::remove_file(&aged.path);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn the_sweep_deletes_week_old_copies_and_keeps_everything_else() {
+        let dir = std::env::temp_dir().join(format!("coucou-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let old = dir.join("old.txt");
+        let recent = dir.join("recent.txt");
+        std::fs::write(&old, b"old").unwrap();
+        std::fs::write(&recent, b"new").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(SystemTime::now() - KEEP_FOR - Duration::from_secs(1))
+            .unwrap();
+
+        sweep(&dir);
+
+        assert!(!old.exists(), "an expired copy must be removed");
+        assert!(recent.exists(), "a fresh copy must survive");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

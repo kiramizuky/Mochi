@@ -35,7 +35,7 @@
         "minimizable": false,
         "closable": false,
         "dragDropEnabled": true,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI --autoplay-policy=no-user-gesture-required"
       }
     ]
   },
@@ -58,6 +58,11 @@
     "shortDescription": "Mochi lives at the top of your screen",
     "longDescription": "Coucou puts Mochi at the top of your screen: it shows your Claude Code sessions and a few integrations, and lets you approve, answer, chat and drop files without leaving what you are doing.",
     "windows": {
+      "minimumWebview2Version": "110.0.1587.0",
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
       "nsis": {
         "installMode": "currentUser",
         "languages": [

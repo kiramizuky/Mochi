@@ -3,7 +3,7 @@
 // integrations land here too in a later stage.
 
 import "./settings.css";
-import { Bridge, onEvent, type HookStatus } from "../core/bridge";
+import { Bridge, onEvent, type CrashReport, type HookStatus, type IntegrationHealth, type LauncherCatalog, type LauncherOption, type ProviderInfo, type ProviderModelOption } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 
@@ -173,84 +173,455 @@ function claudeSection(status: HookStatus): HTMLElement {
 
 // ── Claude API section ────────────────────────────────────────────────────────
 
-const MODELS: [string, string][] = [
-  ["claude-opus-5", "Claude Opus 5"],
-  ["claude-sonnet-5", "Claude Sonnet 5"],
-  ["claude-haiku-4-5", "Claude Haiku 4.5"],
+// ── AI provider section ───────────────────────────────────────────────────────
+
+/** Used when the settings page runs in a plain browser (`npm run dev`). The
+ *  Rust catalogue is the source of truth in the app. */
+const FALLBACK_PROVIDERS: ProviderInfo[] = [
+  {
+    id: "anthropic", name: "Anthropic", defaultModel: "claude-opus-5",
+    models: [
+      { id: "claude-opus-5", label: "Claude Opus 5" },
+      { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
+      { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
+      { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+    ],
+    keyName: "anthropic-api-key", keyPlaceholder: "sk-ant-…", requiresKey: true, isLocal: false,
+  },
+  {
+    id: "openai", name: "OpenAI", defaultModel: "gpt-6.1-sol",
+    models: [
+      { id: "gpt-6.1-sol", label: "GPT-6.1 Sol" },
+      { id: "gpt-6-astra", label: "GPT-6 Astra" },
+      { id: "gpt-6-sol", label: "GPT-6 Sol" },
+      { id: "gpt-6-luna", label: "GPT-6 Luna" },
+      { id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+    ],
+    keyName: "openai-api-key", keyPlaceholder: "sk-…", requiresKey: true, isLocal: false,
+  },
+  {
+    id: "gemini", name: "Google Gemini", defaultModel: "gemini-3.6-flash",
+    models: [
+      { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash" },
+      { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite" },
+      { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
+      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (preview)" },
+      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    ],
+    keyName: "gemini-api-key", keyPlaceholder: "AIza…", requiresKey: true, isLocal: false,
+  },
+  {
+    id: "groq", name: "Groq", defaultModel: "openai/gpt-oss-120b",
+    models: [
+      { id: "openai/gpt-oss-120b", label: "GPT-OSS 120B (Groq)" },
+      { id: "qwen/qwen3.8-27b", label: "Qwen 3.8 27B (Groq)" },
+      { id: "openai/gpt-oss-20b", label: "GPT-OSS 20B (Groq)" },
+      { id: "allam-2-7b", label: "ALLaM 2 7B (Groq)" },
+      { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile" },
+      { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B Instant" },
+    ],
+    keyName: "groq-api-key", keyPlaceholder: "gsk_…", requiresKey: true, isLocal: false,
+  },
+  {
+    id: "local_mlx", name: "Local model", defaultModel: "qwen2.5:7b",
+    models: [
+      { id: "qwen2.5:7b", label: "Qwen 2.5 7B (Recommended)" },
+      { id: "llama3.2:3b", label: "Llama 3.2 3B (Fast)" },
+      { id: "deepseek-r1:7b", label: "DeepSeek R1 7B (Reasoning)" },
+      { id: "mistral:7b", label: "Mistral 7B" },
+    ],
+    keyName: "local-api-key", keyPlaceholder: "optional", requiresKey: false, isLocal: true,
+  },
 ];
 
-function apiSection(hasKey: boolean): HTMLElement {
-  const dot = statusDot(hasKey);
-  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No key yet — the chat needs one." });
+function providerFor(catalog: ProviderInfo[], id: string): ProviderInfo {
+  return catalog.find((provider) => provider.id === id) ?? catalog[0];
+}
 
-  const field = h("input", {
-    type: "password",
-    placeholder: hasKey ? "••••••••••••  (stored)" : "sk-ant-...",
-    style: "flex:1 1 auto;min-width:0",
-    autocomplete: "off",
-    spellcheck: "false",
-  }) as HTMLInputElement;
+function fillModels(
+  select: HTMLSelectElement,
+  models: ProviderModelOption[],
+  selected: string,
+) {
+  clear(select);
+  const seen = new Set<string>();
+  for (const model of models) {
+    if (seen.has(model.id)) continue;
+    seen.add(model.id);
+    select.append(h("option", { value: model.id, text: model.label }));
+  }
+  // A live model that disappeared from the list must still be visible, or the
+  // user would silently be switched to a different one.
+  if (!seen.has(selected) && selected) {
+    select.append(h("option", { value: selected, text: selected }));
+  }
+  select.value = selected;
+}
 
-  const saveBtn = h("button", { class: "primary", text: "Save key" });
-  const clearBtn = h("button", { class: "danger", text: "Remove" });
-  const feedback = h("div", {});
+function normalizeEndpoint(value: string): string | null {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  try {
+    const url = new URL(trimmed);
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname) return null;
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
 
-  async function refresh() {
-    const present = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
-    dot.style.background = present ? "#22c55e" : "#f4505e";
-    state.textContent = present
-      ? "Key saved in the Windows Credential Manager."
-      : "No key yet — the chat needs one.";
-    field.placeholder = present ? "••••••••••••  (stored)" : "sk-ant-...";
-    clearBtn.style.display = present ? "" : "none";
+function aiSection(catalog: ProviderInfo[]): HTMLElement {
+  const body = h("div", { style: "display:flex;flex-direction:column;gap:10px" });
+  const liveModels: Record<string, ProviderModelOption[]> = {};
+  let modelSelect: HTMLSelectElement | null = null;
+  let feedback: HTMLElement = h("div", {});
+
+  async function loadModels(provider: ProviderInfo, announce: boolean) {
+    const models = await Bridge.providerModels(provider.id);
+    if (!models || models.length === 0) {
+      if (announce) {
+        clear(feedback);
+        feedback.append(h("div", {
+          class: "notice warn",
+          text: `Could not reach ${provider.name}. Showing the built-in model list.`,
+        }));
+      }
+      return;
+    }
+    liveModels[provider.id] = models;
+    // Only touch the dropdown if this provider is still on screen.
+    if (!modelSelect || providerFor(catalog, settings.provider).id !== provider.id) return;
+    fillModels(modelSelect, models, settings.model);
+    if (announce) {
+      clear(feedback);
+      feedback.append(h("div", { class: "notice ok", text: `${models.length} models available.` }));
+    }
   }
 
-  saveBtn.addEventListener("click", async () => {
-    const value = field.value.trim();
-    if (!value) return;
-    clear(feedback);
-    try {
-      await Bridge.secretSet("anthropic-api-key", value);
-      field.value = "";
-      feedback.append(h("div", { class: "notice ok", text: "Saved. It never touches disk." }));
-      await refresh();
-    } catch (err) {
-      feedback.append(h("div", { class: "notice err", text: `Could not save: ${String(err)}` }));
+  function draw() {
+    clear(body);
+    feedback = h("div", {});
+    const provider = providerFor(catalog, settings.provider);
+    if (settings.provider !== provider.id) {
+      settings.provider = provider.id;
+      void save();
     }
-  });
 
-  clearBtn.addEventListener("click", async () => {
-    clear(feedback);
-    try {
-      await Bridge.secretClear("anthropic-api-key");
-      feedback.append(h("div", { class: "notice ok", text: "Key removed." }));
-      await refresh();
-    } catch (err) {
-      feedback.append(h("div", { class: "notice err", text: `Could not remove: ${String(err)}` }));
+    const dot = statusDot(!provider.requiresKey);
+    const head = h("h2", {}, dot, h("span", { text: "AI provider" }));
+
+    const providerSelect = h("select", {}) as HTMLSelectElement;
+    for (const option of catalog) {
+      providerSelect.append(h("option", { value: option.id, text: option.name }));
     }
-  });
+    providerSelect.value = provider.id;
+    providerSelect.addEventListener("change", () => {
+      const next = providerFor(catalog, providerSelect.value);
+      settings.provider = next.id;
+      settings.model = next.defaultModel;
+      void save();
+      draw();
+      void loadModels(next, false);
+    });
 
-  const model = h("select", {}) as HTMLSelectElement;
-  for (const [id, label] of MODELS) model.append(h("option", { value: id, text: label }));
-  if (!MODELS.some(([id]) => id === settings.model)) {
-    model.append(h("option", { value: settings.model, text: settings.model }));
+    const model = h("select", {}) as HTMLSelectElement;
+    modelSelect = model;
+    fillModels(model, liveModels[provider.id] ?? provider.models, settings.model);
+    model.addEventListener("change", () => {
+      settings.model = model.value;
+      void save();
+    });
+
+    const refresh = h("button", { text: "Refresh" });
+    refresh.title = "Ask the provider for its current model list.";
+    refresh.addEventListener("click", async () => {
+      refresh.disabled = true;
+      await loadModels(provider, true);
+      refresh.disabled = false;
+    });
+
+    const keyState = h("span", { class: "hint" });
+    const field = h("input", {
+      type: "password",
+      placeholder: provider.keyPlaceholder,
+      style: "flex:1 1 auto;min-width:0",
+      autocomplete: "off",
+      spellcheck: "false",
+    }) as HTMLInputElement;
+    const saveBtn = h("button", { class: "primary", text: "Save key" });
+    const clearBtn = h("button", { class: "danger", text: "Remove" });
+
+    async function refreshKey() {
+      const present = (await Bridge.secretPresent(provider.keyName)) ?? false;
+      const ok = present || !provider.requiresKey;
+      dot.style.background = ok ? "#22c55e" : "#f4505e";
+      keyState.textContent = present
+        ? "Key saved in the Windows Credential Manager."
+        : provider.requiresKey
+          ? `No key yet — ${provider.name} needs one.`
+          : "No key set. Local servers usually do not need one.";
+      field.placeholder = present ? "••••••••••••  (stored)" : provider.keyPlaceholder;
+      clearBtn.style.display = present ? "" : "none";
+    }
+
+    saveBtn.addEventListener("click", async () => {
+      const value = field.value.trim();
+      if (!value) return;
+      clear(feedback);
+      try {
+        await Bridge.secretSet(provider.keyName, value);
+        field.value = "";
+        feedback.append(h("div", { class: "notice ok", text: "Saved. It never touches disk." }));
+        await refreshKey();
+      } catch (err) {
+        feedback.append(h("div", { class: "notice err", text: `Could not save: ${String(err)}` }));
+      }
+    });
+
+    clearBtn.addEventListener("click", async () => {
+      clear(feedback);
+      try {
+        await Bridge.secretClear(provider.keyName);
+        feedback.append(h("div", { class: "notice ok", text: "Key removed." }));
+        await refreshKey();
+      } catch (err) {
+        feedback.append(h("div", { class: "notice err", text: `Could not remove: ${String(err)}` }));
+      }
+    });
+
+    body.append(
+      head,
+      h("div", {
+        class: "hint",
+        text: "The chat uses the selected provider. Keys stay in the Windows Credential Manager; model lists fall back to the built-in catalogue when the provider cannot be reached.",
+      }),
+      h("div", { class: "row" }, h("label", { text: "Provider" }), providerSelect),
+      h("div", { class: "row" }, h("label", { text: "Model" }), model, refresh),
+      h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
+      keyState,
+    );
+
+    if (provider.isLocal) {
+      const endpoint = h("input", {
+        type: "text",
+        value: settings.localEndpoint,
+        style: "flex:1 1 auto;min-width:0",
+        autocomplete: "off",
+        spellcheck: "false",
+      }) as HTMLInputElement;
+      const endpointSave = h("button", { text: "Save" });
+      endpointSave.addEventListener("click", async () => {
+        const value = normalizeEndpoint(endpoint.value);
+        clear(feedback);
+        if (!value) {
+          feedback.append(h("div", {
+            class: "notice warn",
+            text: "Use an absolute http:// or https:// URL, for example http://127.0.0.1:11434/v1.",
+          }));
+          return;
+        }
+        settings.localEndpoint = value;
+        endpoint.value = value;
+        await save();
+        feedback.append(h("div", { class: "notice ok", text: "Local endpoint saved." }));
+        await loadModels(provider, true);
+      });
+      body.append(
+        h("div", { class: "row" }, h("label", { text: "Server" }), endpoint, endpointSave),
+        h("div", {
+          class: "hint",
+          text: "Ollama works out of the box at http://127.0.0.1:11434/v1. LM Studio and MLX servers use their own OpenAI-compatible URL.",
+        }),
+      );
+    }
+
+    body.append(feedback);
+    void refreshKey();
   }
-  model.value = settings.model;
-  model.addEventListener("change", () => {
-    settings.model = model.value;
-    void save();
+
+  draw();
+  return h("section", {}, body);
+}
+
+// ── Welcome (first run) ───────────────────────────────────────────────────────
+
+function welcomeSection(
+  providers: ProviderInfo[],
+  hasKey: boolean,
+  hooksInstalled: boolean,
+  launchers: LauncherCatalog,
+): HTMLElement | null {
+  if (settings.onboarded) return null;
+
+  const initial = providerFor(providers, settings.provider);
+  const notice = h("div", {});
+  const finish = h("button", { class: "primary", text: "Finish setup" });
+  const skip = h("button", { text: "Skip for now" });
+
+  const editorReady = launchers.editors.find((option) => option.id === "auto")?.installed ?? false;
+  const terminalReady = launchers.terminals.find((option) => option.id === "auto")?.installed ?? false;
+  const detection = editorReady
+    ? terminalReady
+      ? "Auto-detect found an editor and a terminal."
+      : "Auto-detect found an editor; Command Prompt is the terminal fallback."
+    : "No editor found, so the folder opens in Explorer; Command Prompt is the terminal fallback.";
+
+  function step(done: boolean, title: string, detail: string): HTMLElement {
+    return h(
+      "div",
+      { class: "row", style: "align-items:flex-start" },
+      statusDot(done),
+      h("div", { style: "display:flex;flex-direction:column;gap:2px" },
+        h("b", { text: title }),
+        h("span", { class: "hint", text: detail }),
+      ),
+    );
+  }
+
+  async function complete(force: boolean) {
+    clear(notice);
+    const provider = providerFor(providers, settings.provider);
+    if (!force && provider.requiresKey) {
+      const present = (await Bridge.secretPresent(provider.keyName)) ?? false;
+      if (!present) {
+        notice.append(h("div", {
+          class: "notice warn",
+          text: `Add a key for ${provider.name} under AI provider first, pick the local provider, or skip for now.`,
+        }));
+        return;
+      }
+    }
+    settings.onboarded = true;
+    await save();
+    section.remove();
+  }
+
+  finish.addEventListener("click", () => void complete(false));
+  skip.addEventListener("click", () => void complete(true));
+
+  const section = h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Welcome to Coucou" })),
+    h("div", {
+      class: "hint",
+      text: "Three short steps and Mochi is ready. Everything can be changed later in this window.",
+    }),
+    step(
+      hasKey || !initial.requiresKey,
+      `1. Connect ${initial.name}`,
+      hasKey || !initial.requiresKey
+        ? "A key is saved in the Windows Credential Manager."
+        : "Save a key under AI provider below, or switch to the local provider.",
+    ),
+    step(
+      hooksInstalled,
+      "2. Install Claude Code hooks",
+      hooksInstalled
+        ? "Hooks are installed; permission cards appear in the island."
+        : "Use Install hooks under Claude Code so permission requests show up in the island.",
+    ),
+    step(true, "3. Pick an editor and terminal", detection),
+    h("div", { class: "row" }, finish, skip),
+    notice,
+  );
+  return section;
+}
+
+// ── Editor and terminal section ───────────────────────────────────────────────
+
+const FALLBACK_LAUNCHERS: LauncherCatalog = {
+  editors: [
+    { id: "auto", name: "Auto-detect", installed: true },
+    { id: "vscode", name: "Visual Studio Code", installed: false },
+    { id: "cursor", name: "Cursor", installed: false },
+    { id: "windsurf", name: "Windsurf", installed: false },
+    { id: "antigravity", name: "Antigravity", installed: false },
+  ],
+  terminals: [
+    { id: "auto", name: "Auto-detect", installed: true },
+    { id: "windows_terminal", name: "Windows Terminal", installed: false },
+    { id: "powershell", name: "Windows PowerShell", installed: false },
+    { id: "pwsh", name: "PowerShell 7", installed: false },
+    { id: "git_bash", name: "Git Bash", installed: false },
+    { id: "cmd", name: "Command Prompt", installed: true },
+  ],
+};
+
+function launcherSection(initial: LauncherCatalog): HTMLElement {
+  let catalog = initial;
+  const body = h("div", { style: "display:flex;flex-direction:column;gap:10px" });
+
+  function picker(
+    label: string,
+    options: LauncherOption[],
+    value: string,
+    kind: "editor" | "terminal",
+  ): HTMLElement {
+    const select = h("select", {}) as HTMLSelectElement;
+    for (const option of options) {
+      select.append(h("option", {
+        value: option.id,
+        text: option.installed ? option.name : `${option.name} (not found)`,
+      }));
+    }
+    select.value = options.some((option) => option.id === value) ? value : "auto";
+
+    const hint = h("span", { class: "hint" });
+    function updateHint() {
+      const chosen = options.find((option) => option.id === select.value);
+      if (chosen?.installed) {
+        hint.textContent = "";
+      } else if (chosen?.id === "auto") {
+        hint.textContent = kind === "editor"
+          ? "No editor found; the folder opens in Explorer instead."
+          : "No terminal found; Command Prompt is used.";
+      } else {
+        hint.textContent = "Not found on this PC. Auto-detect is used until it is installed.";
+      }
+    }
+
+    select.addEventListener("change", () => {
+      if (kind === "editor") settings.preferredEditor = select.value;
+      else settings.preferredTerminal = select.value;
+      updateHint();
+      void save();
+    });
+    updateHint();
+
+    return h("div", { class: "row" }, h("label", { text: label }), select, hint);
+  }
+
+  function draw() {
+    clear(body);
+    body.append(
+      picker("Editor", catalog.editors, settings.preferredEditor, "editor"),
+      picker("Terminal", catalog.terminals, settings.preferredTerminal, "terminal"),
+    );
+  }
+
+  const refresh = h("button", { text: "Refresh" });
+  refresh.title = "Detect editors and terminals again.";
+  refresh.addEventListener("click", async () => {
+    refresh.disabled = true;
+    const fresh = await Bridge.launchersCatalog();
+    if (fresh) {
+      catalog = fresh;
+      draw();
+    }
+    refresh.disabled = false;
   });
 
-  clearBtn.style.display = hasKey ? "" : "none";
-
+  draw();
   return h(
     "section",
     {},
-    h("h2", {}, dot, h("span", { text: "Claude" })),
-    state,
-    h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
-    h("div", { class: "row" }, h("label", { text: "Model" }), model),
-    feedback,
+    h("h2", {}, h("span", { text: "Editor & terminal" })),
+    h("div", {
+      class: "hint",
+      text: "Used by Open in editor on a Claude Code task and by Open terminal when a session finishes. Only apps from this list are launched, and the session folder is passed as a validated path.",
+    }),
+    body,
+    h("div", { class: "row" }, refresh),
   );
 }
 
@@ -286,13 +657,55 @@ const INTEGRATIONS: IntegrationDef[] = [
 
 const MAX_ACTIVE = 4;
 
-function integrationsSection(present: Record<string, boolean>): HTMLElement {
+function relativeTime(seconds: number | null): string {
+  if (!seconds) return "";
+  const diff = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
+  return `${Math.floor(diff / 86400)} d ago`;
+}
+
+function integrationsSection(
+  present: Record<string, boolean>,
+  healthList: IntegrationHealth[],
+): HTMLElement {
   const note = h("div", { class: "hint" });
   const list = h("div", { style: "display:flex;flex-direction:column;gap:14px" });
+  const statuses: Record<string, { dot: HTMLElement; text: HTMLElement }> = {};
 
   function updateNote() {
     const used = settings.activeIntegrations.length;
     note.textContent = `Pick up to ${MAX_ACTIVE} pills to show next to Mochi — ${used}/${MAX_ACTIVE} in use. Keys are stored in the Windows Credential Manager, never on disk.`;
+  }
+
+  function applyHealth(list: IntegrationHealth[]) {
+    for (const def of INTEGRATIONS) {
+      const row = statuses[def.id];
+      if (!row) continue;
+      const health = list.find((item) => item.id === def.id);
+      if (!health) {
+        row.dot.style.background = "#8c8c8c";
+        row.text.textContent = "Status unavailable.";
+        continue;
+      }
+      if (!health.enabled) {
+        row.dot.style.background = "#8c8c8c";
+        row.text.textContent = "Off — switch it on to poll.";
+      } else if (!health.configured) {
+        row.dot.style.background = "#f5a524";
+        row.text.textContent = "Needs its key before it can poll.";
+      } else if (health.ok === null) {
+        row.dot.style.background = "#8c8c8c";
+        row.text.textContent = "Waiting for the first poll.";
+      } else if (health.ok) {
+        row.dot.style.background = "#22c55e";
+        row.text.textContent = `Healthy${health.lastSuccess ? ` — checked ${relativeTime(health.lastSuccess)}` : ""}.`;
+      } else {
+        row.dot.style.background = "#f4505e";
+        row.text.textContent = health.error || "Last poll failed.";
+      }
+    }
   }
 
   for (const def of INTEGRATIONS) {
@@ -342,6 +755,16 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
       );
     }
 
+    const healthDot = statusDot(false);
+    const healthText = h("span", { class: "hint" });
+    statuses[def.id] = { dot: healthDot, text: healthText };
+    rows.append(
+      h("div", { class: "row" },
+        h("label", { style: "min-width:104px", text: "Status" }),
+        healthDot, healthText,
+      ),
+    );
+
     list.append(
       h("div", { style: "display:flex;gap:12px;align-items:flex-start" },
         h("div", { style: "display:flex;align-items:center;gap:8px;min-width:132px;padding-top:4px" },
@@ -355,7 +778,25 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
   }
 
   updateNote();
-  return h("section", {}, h("h2", {}, h("span", { text: "Integrations" })), note, list);
+  applyHealth(healthList);
+
+  const refreshStatus = h("button", { text: "Refresh status" });
+  refreshStatus.title = "Show the latest poll result for each integration.";
+  refreshStatus.addEventListener("click", async () => {
+    refreshStatus.disabled = true;
+    const fresh = await Bridge.integrationsHealth();
+    if (fresh) applyHealth(fresh);
+    refreshStatus.disabled = false;
+  });
+
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Integrations" })),
+    note,
+    list,
+    h("div", { class: "row" }, refreshStatus),
+  );
 }
 
 // ── General section ───────────────────────────────────────────────────────────
@@ -417,6 +858,111 @@ function generalSection(): HTMLElement {
   );
 }
 
+// ── Logs section ──────────────────────────────────────────────────────────────
+
+function logSection(): HTMLElement {
+  const feedback = h("div", {});
+  const exportBtn = h("button", { class: "primary", text: "Export log" });
+  const openBtn = h("button", { text: "Open log folder" });
+
+  exportBtn.addEventListener("click", async () => {
+    clear(feedback);
+    exportBtn.disabled = true;
+    try {
+      const path = await Bridge.exportLog();
+      feedback.append(h("div", {
+        class: "notice ok",
+        text: `Sanitised copy saved to ${path}`,
+      }));
+    } catch (err) {
+      feedback.append(h("div", {
+        class: "notice err",
+        text: `Could not export the log: ${String(err).replace(/^Error:\s*/, "")}`,
+      }));
+    } finally {
+      exportBtn.disabled = false;
+    }
+  });
+
+  openBtn.addEventListener("click", () => {
+    void Bridge.openLogFolder();
+  });
+
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Logs" })),
+    h("div", {
+      class: "hint",
+      text: "The local log records hook events, permission decisions and poller problems. It stays on this machine. Export writes a sanitised copy (tokens redacted, size capped) next to the original.",
+    }),
+    h("div", { class: "row" }, exportBtn, openBtn),
+    feedback,
+  );
+}
+
+// ── Crash reports section ─────────────────────────────────────────────────────
+
+function crashSection(initial: CrashReport[]): HTMLElement {
+  let reports = initial;
+  const list = h("div", { style: "display:flex;flex-direction:column;gap:6px" });
+  const feedback = h("div", {});
+  const clearBtn = h("button", { text: "Clear crash reports" });
+  const openBtn = h("button", { text: "Open crash folder" });
+
+  function draw() {
+    clear(list);
+    if (reports.length === 0) {
+      list.append(h("div", { class: "hint", text: "No crash reports on this machine." }));
+      return;
+    }
+    for (const report of reports.slice(0, 3)) {
+      list.append(
+        h("div", { style: "display:flex;flex-direction:column;gap:1px" },
+          h("span", { class: "hint", text: `${report.timestamp} - ${report.location}` }),
+          h("span", { style: "font-size:12px", text: report.message }),
+        ),
+      );
+    }
+    if (reports.length > 3) {
+      list.append(h("div", { class: "hint", text: `and ${reports.length - 3} older report(s)` }));
+    }
+  }
+
+  clearBtn.addEventListener("click", async () => {
+    clear(feedback);
+    clearBtn.disabled = true;
+    try {
+      await Bridge.clearCrashReports();
+      reports = [];
+      draw();
+      feedback.append(h("div", { class: "notice ok", text: "Local crash reports cleared." }));
+    } catch (err) {
+      feedback.append(h("div", {
+        class: "notice err",
+        text: `Could not clear the reports: ${String(err).replace(/^Error:\s*/, "")}`,
+      }));
+    } finally {
+      clearBtn.disabled = false;
+    }
+  });
+  openBtn.addEventListener("click", () => void Bridge.openCrashFolder());
+
+  draw();
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Crash reports" })),
+    h("div", {
+      class: "hint",
+      text: "If the app panics, a report is written locally next to the log (at most 50, messages sanitised). Nothing is uploaded. Clearing them only removes the reports.",
+    }),
+    list,
+    h("div", { class: "row" }, openBtn, clearBtn),
+    feedback,
+  );
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -429,7 +975,14 @@ async function main() {
     installed: false, settingsPath: "", hookPath: "", hookReady: false,
   };
 
-  const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
+  const catalog = (await Bridge.providersCatalog()) ?? FALLBACK_PROVIDERS;
+  const providers = catalog.length > 0 ? catalog : FALLBACK_PROVIDERS;
+  const initialProvider = providerFor(providers, settings.provider);
+  const hasKey = initialProvider.requiresKey
+    ? (await Bridge.secretPresent(initialProvider.keyName)) ?? false
+    : true;
+
+  const launchers = (await Bridge.launchersCatalog()) ?? FALLBACK_LAUNCHERS;
 
   const keys = [
     "stripe-api-key", "github-token", "vercel-token",
@@ -438,13 +991,23 @@ async function main() {
   const present: Record<string, boolean> = {};
   for (const k of keys) present[k] = (await Bridge.secretPresent(k)) ?? false;
 
+  const health = (await Bridge.integrationsHealth()) ?? [];
+  const crashes = (await Bridge.crashReports()) ?? [];
+
   clear(root);
   root.append(
     h("h1", {}, h("span", { text: "Coucou" }), h("span", { class: "version", text: version })),
+  );
+  const welcome = welcomeSection(providers, hasKey, status.installed, launchers);
+  if (welcome) root.append(welcome);
+  root.append(
     claudeSection(status),
-    apiSection(hasKey),
-    integrationsSection(present),
+    aiSection(providers),
+    launcherSection(launchers),
+    integrationsSection(present, health),
     generalSection(),
+    logSection(),
+    crashSection(crashes),
     h("div", {
       class: "hint",
       text: "No telemetry. Network requests only go to the services you configure yourself.",
@@ -454,6 +1017,10 @@ async function main() {
   void onEvent<Settings>("settings-changed", (s) => {
     settings = { ...settings, ...s };
   });
+
+  // The smoke test uses this to prove the Settings webview actually rendered,
+  // and that a fresh profile got the Welcome card rather than an empty page.
+  void Bridge.settingsReady(welcome !== null);
 }
 
 void main();

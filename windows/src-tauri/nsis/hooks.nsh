@@ -2,7 +2,8 @@
 ;
 ; The app stages coucou-hook.exe into %LOCALAPPDATA%\Coucou\bin at launch, so the
 ; installer never recorded it and the default uninstaller leaves it behind. The
-; inbox and the log live in the same place and are ours too.
+; inbox, the log (with its rotation and export) and crash reports live in the
+; same place and are ours too.
 ;
 ; Claude Code's own settings.json is deliberately NOT touched here: it belongs to
 ; the user, it may contain hooks from other tools, and rewriting somebody's
@@ -13,5 +14,8 @@
 !macro NSIS_HOOK_PREUNINSTALL
   RMDir /r "$LOCALAPPDATA\Coucou\bin"
   RMDir /r "$LOCALAPPDATA\Coucou\inbox"
+  RMDir /r "$LOCALAPPDATA\Coucou\crashes"
   Delete "$LOCALAPPDATA\Coucou\coucou.log"
+  Delete "$LOCALAPPDATA\Coucou\coucou.log.1"
+  Delete "$LOCALAPPDATA\Coucou\coucou-log-export.txt"
 !macroend

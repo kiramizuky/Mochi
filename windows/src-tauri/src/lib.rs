@@ -1,31 +1,36 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
 mod claude;
+mod crash;
 mod files;
 mod hooks;
 mod integrations;
 mod island;
+mod launchers;
 mod log;
 mod pipe;
+mod providers;
 mod secrets;
 mod settings;
+mod smoke;
 mod tray;
 mod win_user;
 
 use std::os::windows::process::CommandExt;
 use std::process::Command;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_autostart::{ManagerExt, MacosLauncher};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use claude::{Chat, ChatContext, ChatReply};
 use files::DroppedFile;
 use hooks::{HookPreview, HookStatus};
 use island::{PollGate, ScreenInfo};
 use pipe::Pending;
+use providers::{ModelOption, ProviderInfo};
 use settings::Settings;
 
 /// Keeps spawned helpers from flashing a console window.
@@ -34,6 +39,13 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub struct Shared {
     pub settings: Mutex<Settings>,
     pub gate: Arc<PollGate>,
+    /// Set by the island once its JavaScript is running and talking IPC. Only the
+    /// smoke test reads it; it costs one relaxed store at boot.
+    pub ui_ready: AtomicBool,
+    /// Same idea for the Settings webview: set after the first full render.
+    pub settings_ready: AtomicBool,
+    /// Whether that render included the first-run Welcome card.
+    pub welcome_shown: AtomicBool,
 }
 
 #[derive(Serialize)]
@@ -43,6 +55,7 @@ pub struct BootInfo {
     screen: ScreenInfo,
     version: String,
     hook_path: String,
+    smoke: bool,
 }
 
 #[tauri::command]
@@ -56,11 +69,29 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
         screen,
         version: env!("CARGO_PKG_VERSION").to_string(),
         hook_path: settings::hook_exe_path().to_string_lossy().to_string(),
+        smoke: smoke::requested(),
     }
+}
+
+/// The island's JavaScript reached the backend. The app smoke test waits for
+/// this instead of assuming that a visible window means a working webview.
+#[tauri::command]
+fn ui_ready(shared: State<Shared>) {
+    shared.ui_ready.store(true, Ordering::Relaxed);
+}
+
+/// The Settings window finished its first render. `welcome` says whether the
+/// first-run card was part of it, which the smoke test compares with the
+/// `onboarded` preference instead of guessing from a window title.
+#[tauri::command]
+fn settings_ready(shared: State<Shared>, welcome: bool) {
+    shared.welcome_shown.store(welcome, Ordering::Relaxed);
+    shared.settings_ready.store(true, Ordering::Relaxed);
 }
 
 #[tauri::command]
 fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
+    let settings = settings.normalized();
     let (screen_changed, autostart_changed) = {
         let mut current = shared.settings.lock().unwrap();
         let screen_changed = current.screen != settings.screen;
@@ -73,7 +104,11 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
     }
     if autostart_changed {
         let manager = app.autolaunch();
-        let result = if settings.autostart { manager.enable() } else { manager.disable() };
+        let result = if settings.autostart {
+            manager.enable()
+        } else {
+            manager.disable()
+        };
         if let Err(err) = result {
             eprintln!("[coucou] autostart: {err}");
         }
@@ -102,12 +137,19 @@ fn set_collapsed(app: AppHandle, shared: State<Shared>, collapsed: bool) {
 /// The front end pushes the island shape; Rust decides click-through from it.
 #[tauri::command]
 fn set_island_rect(shared: State<Shared>, x: f64, y: f64, width: f64, height: f64) {
-    shared.gate.set_rect(island::IslandRect { x, y, w: width, h: height });
+    shared.gate.set_rect(island::IslandRect {
+        x,
+        y,
+        w: width,
+        h: height,
+    });
 }
 
 #[tauri::command]
 fn focus_window(app: AppHandle, focused: bool) {
-    let Some(win) = island::window(&app) else { return };
+    let Some(win) = island::window(&app) else {
+        return;
+    };
     island::set_activating(&win, focused);
     if focused {
         let _ = win.set_focus();
@@ -123,7 +165,7 @@ fn reposition(app: AppHandle, shared: State<Shared>) {
 
 #[tauri::command]
 fn open_url(url: String) {
-    if !(url.starts_with("http://") || url.starts_with("https://")) {
+    if !is_openable_url(&url) {
         return;
     }
     let _ = Command::new("rundll32.exe")
@@ -132,44 +174,42 @@ fn open_url(url: String) {
         .spawn();
 }
 
-/// "Open terminal" opens the working folder in VS Code when `code` is on PATH,
-/// and falls back to Explorer otherwise.
-#[tauri::command]
-fn open_in_vscode(path: Option<String>) -> bool {
-    // No `cmd /C` anywhere near this. The path is a project folder chosen by
-    // whoever is using Claude Code, and cmd would happily read `&`, `^` and `%`
-    // in a folder name as syntax. Finding the launcher ourselves and handing the
-    // path over as a separate argument keeps it a path.
-    if let Some(code) = find_on_path("code") {
-        let mut cmd = Command::new(code);
-        if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
-            cmd.arg(p);
-        }
-        if cmd.creation_flags(CREATE_NO_WINDOW).spawn().is_ok() {
-            return true;
-        }
+/// Only real web URLs reach the shell.
+///
+/// `rundll32 url.dll,FileProtocolHandler` will happily open `file:`, `javascript:`
+/// or a UNC path if it is handed one, and the island can pass a URL coming from
+/// an integration payload. Parsing first — and requiring an absolute http(s) URL
+/// with a host — keeps this from becoming a generic protocol launcher. The length
+/// cap is a cheap guard against pathological input.
+fn is_openable_url(input: &str) -> bool {
+    if input.len() > 8_192 {
+        return false;
     }
-    if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
-        let _ = Command::new("explorer").arg(p).spawn();
-    }
-    false
+    let Ok(url) = url::Url::parse(input) else {
+        return false;
+    };
+    matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
 }
 
-/// Our own `where`: walks %PATH% against %PATHEXT%, no shell involved.
-/// Rust quotes arguments correctly for `.cmd`/`.bat` targets since 1.77, so
-/// spawning `code.cmd` directly is safe.
-fn find_on_path(stem: &str) -> Option<std::path::PathBuf> {
-    let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
-    let dirs = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&dirs) {
-        for ext in exts.split(';').filter(|e| !e.is_empty()) {
-            let candidate = dir.join(format!("{stem}{}", ext.to_lowercase()));
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
+/// "Open in editor" on a Claude Code task. The editor comes from Settings and
+/// falls back to Explorer when none is installed.
+#[tauri::command]
+fn open_editor(shared: State<Shared>, path: Option<String>) -> bool {
+    let preferred = shared.settings.lock().unwrap().preferred_editor.clone();
+    launchers::open_editor(&preferred, path.as_deref())
+}
+
+/// "Open terminal" opens the preferred terminal at the session folder.
+#[tauri::command]
+fn open_terminal(shared: State<Shared>, path: Option<String>) -> bool {
+    let preferred = shared.settings.lock().unwrap().preferred_terminal.clone();
+    launchers::open_terminal(&preferred, path.as_deref())
+}
+
+/// Detected editors and terminals for the settings window.
+#[tauri::command]
+fn launchers_catalog() -> launchers::LauncherCatalog {
+    launchers::catalog()
 }
 
 #[tauri::command]
@@ -248,8 +288,33 @@ async fn chat_send(
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
-    let model = shared.settings.lock().unwrap().model.clone();
-    claude::send(&chat, &model, query, context).await
+    let (provider, model, local_endpoint) = {
+        let current = shared.settings.lock().unwrap();
+        (
+            providers::resolve(&current.provider),
+            current.model.clone(),
+            current.local_endpoint.clone(),
+        )
+    };
+    claude::send(&chat, provider, &model, &local_endpoint, query, context).await
+}
+
+/// Provider catalogue for the settings window. Labels and key names only.
+#[tauri::command]
+fn providers_catalog() -> Vec<ProviderInfo> {
+    providers::catalog()
+}
+
+/// Live model list with the static catalogue as a fallback. Never returns a key.
+#[tauri::command]
+async fn provider_models(
+    shared: State<'_, Shared>,
+    provider: String,
+) -> Result<Vec<ModelOption>, String> {
+    let selected = providers::resolve(&provider);
+    let local_endpoint = shared.settings.lock().unwrap().local_endpoint.clone();
+    let key = secrets::get(selected.key_name());
+    Ok(providers::list_models(selected, key.as_deref(), &local_endpoint).await)
 }
 
 #[tauri::command]
@@ -293,6 +358,43 @@ async fn refresh_integration(app: AppHandle, id: String) {
     integrations::poll_once(app, &id).await;
 }
 
+/// Last poll result per integration, plus why it is not polling.
+#[tauri::command]
+fn integrations_health(app: AppHandle) -> Vec<integrations::IntegrationHealth> {
+    integrations::health(&app)
+}
+
+/// Writes a sanitised copy of the log next to the original and returns its path.
+#[tauri::command]
+fn export_log() -> Result<String, String> {
+    log::export()
+        .map(|path| path.to_string_lossy().to_string())
+        .map_err(|err| format!("Could not export the log: {err}"))
+}
+
+/// Local crash reports, newest first. Messages were sanitised when written and
+/// are sanitised again when read.
+#[tauri::command]
+fn crash_reports() -> Vec<crash::CrashReport> {
+    crash::reports()
+}
+
+#[tauri::command]
+fn clear_crash_reports() -> Result<(), String> {
+    crash::clear().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn open_crash_folder() {
+    crash::open_folder();
+}
+
+/// Opens the folder that holds the log and the exported copy.
+#[tauri::command]
+fn open_log_folder() {
+    let _ = Command::new("explorer").arg(settings::local_dir()).spawn();
+}
+
 /// Lets the island write to the same log as the Rust side.
 #[tauri::command]
 fn log_line(message: String) {
@@ -306,7 +408,14 @@ fn log_line(message: String) {
 /// for the *same* arguments as the island (see `additionalBrowserArgs` in
 /// tauri.conf.json) — a mismatch makes the second window come up blank, with no
 /// error anywhere.
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
+///
+/// These are the only two arguments we ship, and neither weakens a Windows
+/// protection: `msWebOOUI`/`msPdfOOUI` remove the built-in PDF/download chrome
+/// from a frameless window, and the autoplay policy lets the launch greeting
+/// play a cue. `msSmartScreenProtection` used to be disabled here; it must never
+/// come back, in dev or release.
+const BROWSER_ARGS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI --autoplay-policy=no-user-gesture-required";
 
 /// In a dev build the pages are served by Vite, so the second window needs the
 /// absolute dev URL; a bundled build resolves it inside the app bundle.
@@ -366,29 +475,42 @@ fn open_settings_window(app: AppHandle) {
 }
 
 pub fn run() {
+    // Before anything else can panic, so a crash leaves a local report.
+    crash::install();
     let loaded = settings::load();
     let gate = Arc::new(PollGate::new());
+    let smoke_mode = smoke::requested();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             let _ = app.emit_to(island::WINDOW_LABEL, "tray", "open".to_string());
         }))
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(Shared {
             settings: Mutex::new(loaded.clone()),
             gate: gate.clone(),
+            ui_ready: AtomicBool::new(false),
+            settings_ready: AtomicBool::new(false),
+            welcome_shown: AtomicBool::new(false),
         })
         .manage(Pending::default())
         .manage(Chat::default())
         .invoke_handler(tauri::generate_handler![
             boot,
+            ui_ready,
+            settings_ready,
             save_settings,
             set_collapsed,
             set_island_rect,
             focus_window,
             reposition,
             open_url,
-            open_in_vscode,
+            open_editor,
+            open_terminal,
+            launchers_catalog,
             quit_app,
             hooks_status,
             hooks_preview,
@@ -399,11 +521,19 @@ pub fn run() {
             log_line,
             chat_send,
             chat_reset,
+            providers_catalog,
+            provider_models,
             ingest_file,
             secret_present,
             secret_set,
             secret_clear,
             refresh_integration,
+            integrations_health,
+            export_log,
+            open_log_folder,
+            crash_reports,
+            clear_crash_reports,
+            open_crash_folder,
             open_n8n,
             open_settings_window,
             set_paused,
@@ -423,12 +553,68 @@ pub fn run() {
             gate.set_active(true);
             island::spawn_cursor_poll(handle.clone(), gate.clone());
 
-            log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
+            log::line(format!(
+                "--- Coucou {} started ---",
+                env!("CARGO_PKG_VERSION")
+            ));
             hooks::ensure_hook_exe(&handle);
+            // A fresh install opens Settings once so the welcome card, key and
+            // hook install are one click away. It never opens in a smoke run.
+            if !smoke_mode && !loaded.onboarded {
+                show_settings_window(&handle);
+            }
             pipe::start(handle.clone());
-            integrations::start(handle.clone());
+            if smoke_mode {
+                // No network calls while measuring the shell, and no chance of a
+                // smoke run poking an integration the user configured.
+                log::line("smoke mode: integration pollers disabled");
+            } else {
+                integrations::start(handle.clone());
+            }
+            if smoke_mode {
+                smoke::run(handle.clone());
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running Coucou");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_openable_url;
+
+    #[test]
+    fn only_absolute_http_and_https_urls_are_opened() {
+        for url in [
+            "https://example.com",
+            "http://localhost:3000/path?q=1#frag",
+            "https://api.anthropic.com/v1/messages",
+        ] {
+            assert!(is_openable_url(url), "{url} should be allowed");
+        }
+
+        for url in [
+            "",
+            "example.com",
+            "//example.com",
+            "file:///C:/Windows/System32/calc.exe",
+            "javascript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "mailto:someone@example.com",
+            "ms-settings:privacy",
+            "\\\\server\\share",
+            "https://",
+            "https://:443",
+            "https:// ",
+        ] {
+            assert!(!is_openable_url(url), "{url} must be refused");
+        }
+    }
+
+    #[test]
+    fn absurdly_long_urls_are_refused() {
+        let long = format!("https://example.com/{}", "a".repeat(9_000));
+        assert!(!is_openable_url(&long));
+    }
 }

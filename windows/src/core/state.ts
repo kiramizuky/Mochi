@@ -90,8 +90,18 @@ export interface Settings {
   screen: "primary" | "cursor";
   autostart: boolean;
   hooksInstalled: boolean;
-  /** Claude model used by the chat. */
+  /** Selected AI provider: anthropic, openai, gemini, groq or local_mlx. */
+  provider: string;
+  /** Model used by the chat. */
   model: string;
+  /** OpenAI-compatible base URL for the local provider. */
+  localEndpoint: string;
+  /** Editor id from `LauncherCatalog.editors`, "auto" by default. */
+  preferredEditor: string;
+  /** Terminal id from `LauncherCatalog.terminals`, "auto" by default. */
+  preferredTerminal: string;
+  /** False until the first-run welcome card is finished or skipped. */
+  onboarded: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -105,12 +115,17 @@ export const DEFAULT_SETTINGS: Settings = {
   screen: "primary",
   autostart: false,
   hooksInstalled: false,
+  provider: "anthropic",
   model: "claude-opus-5",
+  localEndpoint: "http://127.0.0.1:11434/v1",
+  preferredEditor: "auto",
+  preferredTerminal: "auto",
+  onboarded: false,
 };
 
 type Listener = () => void;
 
-class AppState {
+export class AppState {
   mode: IslandMode = "hidden";
   view: IslandViewName = "overview";
 

@@ -1,23 +1,42 @@
 import { defineConfig, type Plugin } from "vite";
 import { existsSync, mkdirSync, readdirSync, copyFileSync, createReadStream } from "node:fs";
 import { resolve, join, extname } from "node:path";
+import { SOUND_NAMES } from "./src/core/sound-names";
 
 // ───────────────────────────────────────────────────────────────────────────────
 // THE one and only place the shared sound folder is declared.
-// The 28 WAVs live in the macOS app and are NOT duplicated in the repo; when they
-// move to `shared/sounds/`, change this single line.
-export const SOUNDS_DIR = resolve(__dirname, "../NotchBuddy/Resources/sounds");
+// The 28 WAVs are original, generated cues committed in `shared/sounds/` (see
+// `scripts/gen-sounds.mjs`). The macOS recordings are brand assets and are not
+// part of this repository.
+export const SOUNDS_DIR = resolve(__dirname, "../shared/sounds");
 // ───────────────────────────────────────────────────────────────────────────────
+
+const soundFile = (name: string) => join(SOUNDS_DIR, `${name}.wav`);
+
+/** Names that `sound.ts` will fetch but that are not on disk. */
+function missingSounds(): string[] {
+  return SOUND_NAMES.filter((name) => !existsSync(soundFile(name)));
+}
 
 /**
  * Serves SOUNDS_DIR at /sounds/*.wav in dev, and copies it into dist/sounds on build.
  * Keeps the WAVs out of windows/ while still shipping them inside the installer.
+ *
+ * A production build fails when a cue is missing: the app would otherwise start
+ * silently and nobody would notice until a release was installed.
  */
 function sharedSounds(): Plugin {
   const prefix = "/sounds/";
   return {
     name: "coucou-shared-sounds",
     configureServer(server) {
+      const missing = missingSounds();
+      if (missing.length) {
+        server.config.logger.warn(
+          `[sounds] missing ${missing.length} cue(s) in ${SOUNDS_DIR}: ${missing.join(", ")}\n` +
+            `         run \`node scripts/gen-sounds.mjs\` from the repo root`,
+        );
+      }
       server.middlewares.use((req, res, next) => {
         if (!req.url?.startsWith(prefix)) return next();
         const name = decodeURIComponent(req.url.slice(prefix.length).split("?")[0]);
@@ -29,14 +48,25 @@ function sharedSounds(): Plugin {
       });
     },
     closeBundle() {
-      const out = resolve(__dirname, "dist/sounds");
-      if (!existsSync(SOUNDS_DIR)) {
-        this.warn(`sounds not found at ${SOUNDS_DIR} — the build will ship without audio`);
-        return;
+      const missing = missingSounds();
+      if (missing.length) {
+        this.error(
+          `Missing ${missing.length} sound cue(s) in ${SOUNDS_DIR}: ${missing.join(", ")}. ` +
+            `Run \`node scripts/gen-sounds.mjs\` from the repo root.`,
+        );
       }
+
+      const out = resolve(__dirname, "dist/sounds");
       mkdirSync(out, { recursive: true });
-      for (const f of readdirSync(SOUNDS_DIR)) {
-        if (extname(f) === ".wav") copyFileSync(join(SOUNDS_DIR, f), join(out, f));
+      for (const name of SOUND_NAMES) {
+        copyFileSync(soundFile(name), join(out, `${name}.wav`));
+      }
+
+      const extras = readdirSync(SOUNDS_DIR).filter(
+        (f) => extname(f) === ".wav" && !(SOUND_NAMES as readonly string[]).includes(f.slice(0, -4)),
+      );
+      if (extras.length) {
+        this.warn(`sounds not used by the island: ${extras.join(", ")}`);
       }
     },
   };

@@ -2,7 +2,8 @@
 // windows/release/, with the name it ships under. Used by `npm run pack` and by
 // the release workflow, so both produce exactly the same file names.
 
-import { readFileSync, mkdirSync, copyFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,7 +36,16 @@ const rolling = join(outDir, "Coucou-Windows-setup.exe");
 copyFileSync(built, versioned);
 copyFileSync(built, rolling);
 
+// SHA-256 sidecar for UAT/Downloads so a tester can verify what they ran.
+// Signed installers come from the release workflow; a local `npm run pack`
+// still produces an unsigned installer for development.
+const digest = createHash("sha256").update(readFileSync(versioned)).digest("hex");
+const checksum = join(outDir, `Coucou-Windows-${version}-setup.exe.sha256`);
+writeFileSync(checksum, `${digest}  Coucou-Windows-${version}-setup.exe\n`, "utf8");
+
 const mb = (statSync(versioned).size / 1024 / 1024).toFixed(2);
 console.log(`\n  Installer ready — ${mb} MB\n`);
 console.log(`  ${versioned}`);
-console.log(`  ${rolling}\n`);
+console.log(`  ${rolling}`);
+console.log(`  SHA-256: ${digest}\n`);
+console.log(`  Checksum written to ${checksum}\n`);

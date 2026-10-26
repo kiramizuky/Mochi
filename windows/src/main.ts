@@ -65,6 +65,10 @@ async function main() {
 
   island.launch();
 
+  // Tells the backend (and the app smoke test) that the island's JavaScript
+  // booted and the IPC bridge round-trips. One call, once per launch.
+  void Bridge.uiReady();
+
   // In a plain browser there is no wake strip behind the cursor: make the whole
   // page wake the island so the visuals can be checked with `npm run dev`.
   if (!IS_TAURI) {
@@ -72,4 +76,8 @@ async function main() {
   }
 }
 
-void main();
+void main().catch((err) => {
+  // Without this a boot failure is only visible to someone with DevTools open.
+  console.error("[coucou] boot failed", err);
+  void Bridge.log(`boot failed: ${String(err)}`);
+});

@@ -26,10 +26,18 @@ export interface BootInfo {
   screen: { x: number; y: number; width: number; height: number; scale: number };
   version: string;
   hookPath: string;
+  /** True only for `COUCOU_SMOKE_TEST=1` launches. */
+  smoke: boolean;
 }
 
 export const Bridge = {
   boot: () => call<BootInfo>("boot"),
+
+  /** Tells the app smoke test that this webview booted and the bridge works. */
+  uiReady: () => call<void>("ui_ready"),
+
+  /** Settings equivalent: says whether the first-run Welcome card rendered. */
+  settingsReady: (welcome: boolean) => call<void>("settings_ready", { welcome }),
 
   saveSettings: (settings: Settings) => call<void>("save_settings", { settings }),
 
@@ -50,8 +58,14 @@ export const Bridge = {
 
   openUrl: (url: string) => call<void>("open_url", { url }),
 
-  /** "Open terminal" → opens the folder in VS Code when `code` is on PATH. */
-  openInVSCode: (path: string | null) => call<boolean>("open_in_vscode", { path }),
+  /** "Open in editor" opens the folder in the editor chosen in Settings. */
+  openEditor: (path: string | null) => call<boolean>("open_editor", { path }),
+
+  /** "Open terminal" opens the preferred terminal at the session folder. */
+  openTerminal: (path: string | null) => call<boolean>("open_terminal", { path }),
+
+  /** Detected editors and terminals. One entry per fixed catalogue id. */
+  launchersCatalog: () => call<LauncherCatalog>("launchers_catalog"),
 
   quit: () => call<void>("quit_app"),
 
@@ -83,6 +97,10 @@ export const Bridge = {
   chatSend: (query: string, context: ChatContext | null) =>
     callOrThrow<{ text: string }>("chat_send", { query, context }),
   chatReset: () => call<void>("chat_reset"),
+  /** Provider list with static model fallbacks. Never includes a key. */
+  providersCatalog: () => call<ProviderInfo[]>("providers_catalog"),
+  /** Live models for one provider; falls back to the static list in Rust. */
+  providerModels: (provider: string) => call<ProviderModelOption[]>("provider_models", { provider }),
   /** Copies a dropped file into the inbox. */
   ingestFile: (path: string) => callOrThrow<DroppedFile>("ingest_file", { path }),
   /** Only ever tells you whether a key exists — never its value. */
@@ -92,8 +110,19 @@ export const Bridge = {
 
   // ── Integrations ──────────────────────────────────────────────────────────
   refreshIntegration: (id: string) => call<void>("refresh_integration", { id }),
+  /** Last poll result per integration, plus enabled/configured state. */
+  integrationsHealth: () => call<IntegrationHealth[]>("integrations_health"),
   /** Opens the configured n8n instance in the browser. */
   openN8n: () => call<void>("open_n8n"),
+
+  // ── Logs ──────────────────────────────────────────────────────────────────
+  /** Writes a sanitised copy next to the log and returns its path. */
+  exportLog: () => callOrThrow<string>("export_log"),
+  openLogFolder: () => call<void>("open_log_folder"),
+  /** Local panic reports, newest first. */
+  crashReports: () => call<CrashReport[]>("crash_reports"),
+  clearCrashReports: () => callOrThrow<void>("clear_crash_reports"),
+  openCrashFolder: () => call<void>("open_crash_folder"),
 
   /** Tray → Pause. Stops the integration pollers, not just the island. */
   setPaused: (paused: boolean) => call<void>("set_paused", { paused }),
@@ -106,9 +135,58 @@ export interface IntegrationUpdate {
   event: { success: boolean; label: string; detail: string | null } | null;
 }
 
+export interface IntegrationHealth {
+  id: string;
+  name: string;
+  enabled: boolean;
+  configured: boolean;
+  /** `null` until the first poll completes. */
+  ok: boolean | null;
+  /** Unix seconds. */
+  lastAttempt: number | null;
+  lastSuccess: number | null;
+  error: string | null;
+}
+
 export type ChatContext =
   | { kind: "file"; name: string; path: string }
   | { kind: "window"; appName: string; title: string; url?: string };
+
+export interface ProviderModelOption {
+  id: string;
+  label: string;
+}
+
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  defaultModel: string;
+  models: ProviderModelOption[];
+  keyName: string;
+  keyPlaceholder: string;
+  requiresKey: boolean;
+  isLocal: boolean;
+}
+
+export interface LauncherOption {
+  id: string;
+  name: string;
+  /** False when the app is not installed on this PC; the choice is still saved. */
+  installed: boolean;
+}
+
+export interface LauncherCatalog {
+  editors: LauncherOption[];
+  terminals: LauncherOption[];
+}
+
+export interface CrashReport {
+  timestamp: string;
+  message: string;
+  location: string;
+  thread: string;
+  appVersion: string;
+}
 
 export interface DroppedFile {
   name: string;
