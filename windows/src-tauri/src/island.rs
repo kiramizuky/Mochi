@@ -171,7 +171,7 @@ fn monitor_contains(m: &Monitor, x: f64, y: f64) -> bool {
 }
 
 /// The display the island lives on: the primary one, or the one under the cursor.
-fn target_monitor(app: &AppHandle, pref: &str) -> Option<Monitor> {
+pub fn target_monitor(app: &AppHandle, pref: &str) -> Option<Monitor> {
     let monitors = app.available_monitors().ok()?;
     if pref == "cursor" {
         if let Some((cx, cy)) = cursor_physical() {
@@ -210,6 +210,39 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
     }
 }
 
+/// Where the island window belongs, in physical pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Placement {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Top centre of the monitor, sized in physical pixels for its DPI. Kept pure so
+/// the arithmetic can be tested without a real display; `apply_geometry` feeds it
+/// the live monitor.
+pub fn placement(
+    monitor_pos: (i32, i32),
+    monitor_size: (u32, u32),
+    scale: f64,
+    collapsed: bool,
+) -> Placement {
+    let (lw, lh) = if collapsed {
+        (STRIP_W, STRIP_H)
+    } else {
+        (PANEL_W, PANEL_H)
+    };
+    let width = (lw * scale).round().max(1.0) as u32;
+    let height = (lh * scale).round().max(1.0) as u32;
+    Placement {
+        x: monitor_pos.0 + (monitor_size.0 as i32 - width as i32) / 2,
+        y: monitor_pos.1,
+        width,
+        height,
+    }
+}
+
 /// Places and sizes the window. `collapsed` picks the wake strip instead of the panel.
 pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     let Some(win) = window(app) else { return };
@@ -217,24 +250,20 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
         return;
     };
 
-    let scale = m.scale_factor();
     let mp = *m.position();
     let ms = *m.size();
+    let p = placement(
+        (mp.x, mp.y),
+        (ms.width, ms.height),
+        m.scale_factor(),
+        collapsed,
+    );
+    let size = PhysicalSize::new(p.width, p.height);
 
-    let (lw, lh) = if collapsed {
-        (STRIP_W, STRIP_H)
-    } else {
-        (PANEL_W, PANEL_H)
-    };
-    let pw = (lw * scale).round().max(1.0) as u32;
-    let ph = (lh * scale).round().max(1.0) as u32;
-    let x = mp.x + (ms.width as i32 - pw as i32) / 2;
-    let y = mp.y;
-
-    let _ = win.set_size(PhysicalSize::new(pw, ph));
-    let _ = win.set_position(PhysicalPosition::new(x, y));
+    let _ = win.set_size(size);
+    let _ = win.set_position(PhysicalPosition::new(p.x, p.y));
     // Moving across displays can rescale the window: re-assert the physical size.
-    let _ = win.set_size(PhysicalSize::new(pw, ph));
+    let _ = win.set_size(size);
     let _ = win.set_always_on_top(true);
 }
 
@@ -384,5 +413,66 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
 pub fn set_ignore_cursor(app: &AppHandle, ignore: bool) {
     if let Some(win) = window(app) {
         let _ = win.set_ignore_cursor_events(ignore);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{placement, Placement};
+
+    #[test]
+    fn panel_is_top_centred_on_a_1080p_display() {
+        assert_eq!(
+            placement((0, 0), (1920, 1080), 1.0, false),
+            Placement {
+                x: 600,
+                y: 0,
+                width: 720,
+                height: 320,
+            }
+        );
+    }
+
+    #[test]
+    fn panel_scales_with_dpi() {
+        // 200%: still 720x320 logical, so 1440x640 physical.
+        assert_eq!(
+            placement((0, 0), (3840, 2160), 2.0, false),
+            Placement {
+                x: 1200,
+                y: 0,
+                width: 1440,
+                height: 640,
+            }
+        );
+    }
+
+    #[test]
+    fn wake_strip_is_top_centred_and_scaled() {
+        // 150%: 240x6 logical becomes 360x9 physical.
+        assert_eq!(
+            placement((0, 0), (2560, 1440), 1.5, true),
+            Placement {
+                x: 1100,
+                y: 0,
+                width: 360,
+                height: 9,
+            }
+        );
+    }
+
+    #[test]
+    fn secondary_monitor_keeps_its_negative_origin() {
+        // A display left of the primary has a negative x; the island must land
+        // on that display instead of drifting back to 0.
+        assert_eq!(
+            placement((-1920, 0), (1920, 1080), 1.25, false),
+            Placement {
+                x: -1410,
+                y: 0,
+                width: 900,
+                height: 400,
+            }
+        );
     }
 }

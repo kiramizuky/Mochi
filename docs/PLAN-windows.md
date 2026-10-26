@@ -11,7 +11,7 @@ paritas fitur macOS secara bertahap.
 |---|---|---|
 | 0 — Baseline build | Selesai untuk build/CLI | `npm ci`, `cargo test --workspace`, `npm run build`, `npm run smoke:hook`, dan `npm run pack` lulus di mesin dev Windows. GUI dijalankan lewat smoke test aplikasi; belum ada UAT pada mesin bersih. Versi toolchain dicatat di `windows/README.md`. |
 | 1 — Aset dan hardening | Selesai | 28 WAV orisinal ada di `shared/sounds/`, build gagal bila ada yang hilang, `msSmartScreenProtection` dihapus, CSP ditinjau, relay di-bundle dan di-smoke-test, uninstall hanya membersihkan data disposable. |
-| 2 — Test dan CI Windows | Selesai kecuali run CI pertama | 37 test TypeScript + 60 test Rust lulus. Smoke test aplikasi (8 pemeriksaan: island, IPC frontend, Settings, frontend Settings + kartu Welcome, tray, relay, file drop Unicode) berjalan lokal pada build debug dan release. Workflow `.github/workflows/windows.yml` menjalankan seluruh test, smoke aplikasi, dan mengunggah installer + SHA-256. UAT instalasi otomatis tersedia dan lulus lokal. Belum: run pertama di GitHub Actions dan verifikasi pada mesin Windows 10/11 bersih. |
+| 2 — Test dan CI Windows | Selesai kecuali run CI pertama | 37 test TypeScript + 64 test Rust lulus. Smoke test aplikasi (9 pemeriksaan: island, geometri panel/wake strip + always-on-top, IPC frontend, Settings, frontend Settings + kartu Welcome, tray, relay, file drop Unicode) berjalan lokal pada build debug dan release. Workflow `.github/workflows/windows.yml` menjalankan seluruh test, smoke aplikasi, dan mengunggah installer + SHA-256. UAT instalasi otomatis tersedia dan lulus lokal. Belum: run pertama di GitHub Actions dan verifikasi pada mesin Windows 10/11 bersih. |
 | 3 — Signing dan distribusi | Sebagian | Pipeline signing selesai dan tervalidasi dengan sertifikat self-signed sementara (PFX + thumbprint + timestamp RFC 3161), termasuk verifikasi `signtool /pa /all`. Workflow rilis terpisah siap. Belum: sertifikat Authenticode nyata, secret `WINDOWS_SIGNING_PFX_BASE64`/`WINDOWS_SIGNING_PFX_PASSWORD`, artefak signed dari CI, publikasi GitHub Release, dan UAT Windows 10/11 tanpa toolchain. Installer lokal tetap unsigned. |
 | 4 — Paritas fitur inti | Sebagian | 4.1 selesai: registry Anthropic/OpenAI/Gemini/Groq/lokal, key per provider di Credential Manager, model selector dinamis dengan fallback statis, dan endpoint lokal tervalidasi. 4.2 selesai: status kesehatan integrasi di Settings, log disanitasi dengan rotasi 1 MB, ekspor log aman, dan crash report lokal yang disanitasi (tanpa upload). 4.4 selesai: kartu onboarding pertama kali serta pemilihan editor/terminal dengan deteksi otomatis dan peluncur tervalidasi. 4.3 (auto-update) tertunda sampai kanal rilis bertanda tangan tersedia. |
 | 5 — Fitur lanjutan/otonom | Belum | Wajib RFC + threat model per fitur. |
@@ -21,10 +21,10 @@ Perintah verifikasi cepat dari `windows/`:
 ```powershell
 npm ci
 npm run verify            # versi, typecheck, 37 test TS, 28 WAV
-cargo test --workspace    # 60 test Rust
+cargo test --workspace    # 64 test Rust
 npm run build             # typecheck + bundle front end + hook release
 npm run smoke:hook        # relay aman saat Coucou ditutup
-npm run smoke:app         # 8 pemeriksaan runtime pada build release
+npm run smoke:app         # 9 pemeriksaan runtime pada build release
 npm run sign:smoke        # pipeline signing dengan sertifikat sementara
 npm run uat:install       # install, launch, smoke, uninstall, cleanup
 npm run pack              # installer NSIS + file .sha256 (belum ditandatangani)
@@ -162,12 +162,12 @@ Kriteria selesai:
 - Artifact installer dapat diunduh dari workflow manual untuk UAT internal.
 
 Catatan status (26 Oktober 2026): langkah 1–3 dan 5 selesai. Smoke test Tauri
-berjalan di dalam aplikasi (`COUCOU_SMOKE_TEST=1`) dan memeriksa island, IPC
-frontend, Settings, frontend Settings dengan kartu Welcome pertama kali (profil
-`%APPDATA%` bersih), tray, relay, serta file drop; baseline screenshot visual
-belum dibuat. Langkah 4 selesai di repository, tetapi workflow belum pernah
-berjalan di GitHub Actions. UAT instalasi otomatis lulus pada mesin dev; UAT
-Windows 10/11 bersih masih menjadi prasyarat rilis.
+berjalan di dalam aplikasi (`COUCOU_SMOKE_TEST=1`) dan memeriksa island, geometri
+panel/wake strip pada DPI nyata, IPC frontend, Settings, frontend Settings dengan
+kartu Welcome pertama kali (profil `%APPDATA%` bersih), tray, relay, serta file
+drop; baseline screenshot visual belum dibuat. Langkah 4 selesai di repository,
+tetapi workflow belum pernah berjalan di GitHub Actions. UAT instalasi otomatis
+lulus pada mesin dev; UAT Windows 10/11 bersih masih menjadi prasyarat rilis.
 
 ## Fase 3 — Packaging, signing, dan distribusi
 
@@ -318,10 +318,14 @@ terbuka sampai diuji pada mesin tanpa toolchain.
   (`npm run uat:install`).
 - [ ] Install yang sama pada Windows 10 dan Windows 11 bersih tanpa toolchain.
 - [x] Island, Settings, tray, relay, dan file drop Unicode diperiksa smoke test
-  aplikasi otomatis (8 pemeriksaan).
+  aplikasi otomatis (9 pemeriksaan), termasuk geometri panel/wake strip pada DPI
+  mesin ini dan flag always-on-top.
 - [ ] Autostart, pause, quit, dan interaksi tray diperiksa manual.
-- [ ] DPI 100%, 125%, 150%, 200%; satu dan beberapa monitor.
+- [ ] DPI 100%, 125%, 150%, 200%; satu dan beberapa monitor. Geometri pada DPI
+  mesin dev sudah dicakup smoke; variasi DPI dan monitor lain tetap manual.
 - [ ] Wake strip, click-through, drag/drop, keyboard Esc, dan screen change.
+  Ukuran/posisi wake strip sudah dicakup smoke; interaksi dan perpindahan
+  monitor tetap manual.
 - [ ] Hook install/uninstall serta event dari PowerShell, Windows Terminal, Git
   Bash, dan VS Code.
 - [x] App mati atau named pipe gagal: relay exit 0 tanpa output, termasuk JSON

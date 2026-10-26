@@ -1,6 +1,6 @@
 // Opt-in runtime smoke test for the parts unit tests cannot reach: a real
-// WebView2 island, the hidden settings window, the tray icon, the named-pipe
-// relay and the inbox.
+// WebView2 island and its monitor geometry, the hidden settings window, the tray
+// icon, the named-pipe relay and the inbox.
 //
 // It runs only when `COUCOU_SMOKE_TEST=1`, writes a JSON report (path from
 // `COUCOU_SMOKE_REPORT`) and exits 0/1. `scripts/smoke-app.ps1` owns the
@@ -22,7 +22,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-use crate::{files, log, pipe, settings, Shared};
+use crate::{files, island, log, pipe, settings, Shared};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -38,6 +38,9 @@ struct Check {
     ok: bool,
     detail: String,
 }
+
+/// Physical window position and size, as read back from the window manager.
+type Geometry = ((i32, i32), (u32, u32));
 
 impl Check {
     fn pass(name: &'static str, detail: impl Into<String>) -> Self {
@@ -102,6 +105,7 @@ pub fn run(app: AppHandle) {
 fn checks(app: &AppHandle) -> Vec<Check> {
     vec![
         island_window(app),
+        island_geometry(app),
         frontend_ready(app),
         settings_window(app),
         settings_frontend(app),
@@ -204,6 +208,105 @@ fn settings_frontend(app: &AppHandle) -> Check {
             format!("Welcome card shown={welcome}, but onboarded={onboarded}"),
         )
     }
+}
+
+/// The island must sit at the top centre of its monitor, at the panel size and
+/// again at the wake-strip size, with always-on-top still set. Unit tests cover
+/// the arithmetic; this covers the real monitor's DPI and origin plus the window
+/// manager actually accepting both resizes.
+fn island_geometry(app: &AppHandle) -> Check {
+    let Some(win) = app.get_webview_window("island") else {
+        return Check::fail("island_geometry", "the island window was not created");
+    };
+    let shared = app.state::<Shared>();
+    let pref = shared.settings.lock().unwrap().screen.clone();
+    let Some(monitor) = island::target_monitor(app, &pref) else {
+        return Check::fail("island_geometry", "no monitor was reported");
+    };
+    let mp = *monitor.position();
+    let ms = *monitor.size();
+    let scale = monitor.scale_factor();
+    let panel = island::placement((mp.x, mp.y), (ms.width, ms.height), scale, false);
+    let strip = island::placement((mp.x, mp.y), (ms.width, ms.height), scale, true);
+
+    let read = || -> Result<Geometry, String> {
+        let pos = win
+            .outer_position()
+            .map_err(|e| format!("cannot read the position: {e}"))?;
+        let size = win
+            .inner_size()
+            .map_err(|e| format!("cannot read the size: {e}"))?;
+        Ok(((pos.x, pos.y), (size.width, size.height)))
+    };
+    // One pixel of slack: Win32 rounds physical sizes and positions.
+    let fits = |want: island::Placement, got: Geometry| {
+        let ((x, y), (w, h)) = got;
+        (x - want.x).abs() <= 1
+            && (y - want.y).abs() <= 1
+            && (w as i64 - want.width as i64).abs() <= 1
+            && (h as i64 - want.height as i64).abs() <= 1
+    };
+    let describe = |p: island::Placement| format!("{}x{} at {},{}", p.width, p.height, p.x, p.y);
+
+    let ((px, py), (pw, ph)) = match read() {
+        Ok(got) => got,
+        Err(err) => return Check::fail("island_geometry", err),
+    };
+    if !fits(panel, ((px, py), (pw, ph))) {
+        return Check::fail(
+            "island_geometry",
+            format!(
+                "panel is {pw}x{ph} at {px},{py}; expected {} on a {}x{} monitor at {scale}x",
+                describe(panel),
+                ms.width,
+                ms.height
+            ),
+        );
+    }
+
+    // Resize to the wake strip and back. Both states are used in real life, and
+    // the restore proves the geometry survives a collapse/expand cycle.
+    island::apply_geometry(app, &pref, true);
+    let strip_ok = wait_until(Duration::from_secs(2), || {
+        read().map(|got| fits(strip, got)).unwrap_or(false)
+    });
+    let strip_got = read().unwrap_or(((0, 0), (0, 0)));
+    island::apply_geometry(app, &pref, false);
+    let restore_ok = wait_until(Duration::from_secs(2), || {
+        read().map(|got| fits(panel, got)).unwrap_or(false)
+    });
+    let always_on_top = win.is_always_on_top().unwrap_or(false);
+
+    if !strip_ok {
+        let ((sx, sy), (sw, sh)) = strip_got;
+        return Check::fail(
+            "island_geometry",
+            format!(
+                "wake strip is {sw}x{sh} at {sx},{sy}; expected {}",
+                describe(strip)
+            ),
+        );
+    }
+    if !restore_ok {
+        return Check::fail(
+            "island_geometry",
+            "the panel geometry did not come back after the wake-strip resize",
+        );
+    }
+    if !always_on_top {
+        return Check::fail("island_geometry", "the island is not always on top");
+    }
+
+    Check::pass(
+        "island_geometry",
+        format!(
+            "panel {} and strip {} on a {}x{} monitor at {scale}x, always on top",
+            describe(panel),
+            describe(strip),
+            ms.width,
+            ms.height
+        ),
+    )
 }
 
 fn tray_icon(app: &AppHandle) -> Check {

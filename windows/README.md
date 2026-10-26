@@ -154,14 +154,14 @@ cues is missing.
 
 ```powershell
 npm run verify          # version sync, typecheck, 37 front-end tests, sound check
-cargo test --workspace  # 60 Rust tests (hooks, pipe timeouts, files, settings, providers, launchers, crash reports, URLs)
+cargo test --workspace  # 64 Rust tests (hooks, pipe timeouts, files, settings, providers, launchers, island geometry, crash reports, URLs)
 npm run smoke:hook      # coucou-hook exits 0 and stays silent with Coucou closed
-npm run smoke:app       # real app: island, IPC, tray, Settings, relay, file drop
+npm run smoke:app       # real app: island, geometry, IPC, tray, Settings, relay, file drop
 ```
 
 `scripts/smoke-hook.ps1` talks to the real pipe, so close the island before
 running it locally. `scripts/smoke-app.ps1` launches the app with
-`COUCOU_SMOKE_TEST=1`, waits for eight runtime checks and exits non-zero if any
+`COUCOU_SMOKE_TEST=1`, waits for nine runtime checks and exits non-zero if any
 fails. Both expect the release relay from `npm run build`; the app smoke test
 also needs `target\release\coucou.exe`, built with
 `cargo build --release -p coucou --features custom-protocol` (a bare

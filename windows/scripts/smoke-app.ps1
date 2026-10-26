@@ -1,7 +1,8 @@
-# Runtime smoke test: boots the real app, then checks the island window, the
-# island's JavaScript/IPC bridge, the settings window, the Settings frontend
-# (including the first-run Welcome card), the tray icon, the staged relay, a
-# full permission round-trip and a Unicode file drop.
+# Runtime smoke test: boots the real app, then checks the island window, its
+# panel/wake-strip geometry on the real monitor, the island's JavaScript/IPC
+# bridge, the settings window, the Settings frontend (including the first-run
+# Welcome card), the tray icon, the staged relay, a full permission round-trip
+# and a Unicode file drop.
 #
 # The app performs the checks itself (COUCOU_SMOKE_TEST=1) and writes a JSON
 # report; this script owns the timeout and makes the result readable in CI.
