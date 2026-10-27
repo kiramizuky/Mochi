@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Darwin
 
 // MARK: - Telegram Encrypted Gateway (Pilar D: Mobile On-The-Go)
 
@@ -340,37 +341,53 @@ public final class TelegramGatewayService: @unchecked Sendable {
             waited += 1
         }
 
-        let taskResult = await MainActor.run { () -> String in
+        let rawTask = await MainActor.run { () -> (goal: String, isSuccess: Bool, note: String) in
             if let t = AppState.shared.autonomousTasks.first(where: { $0.id == taskId }) {
                 let note = t.note ?? (t.status == .completed ? "Selesai tanpa catatan." : "Gagal.")
-                return (t.status == .completed ? "✅ *Tugas Selesai:*\n" : "⚠️ *Tugas Selesai Sebagian:*\n") + note
+                return (t.goal, t.status == .completed, note)
             }
-            return "✅ Tugas telah diproses oleh Mac."
+            return (goal, true, "Tugas telah diproses oleh Mac.")
         }
 
-        await sendMessage(chatId: chatId, text: taskResult, token: token)
+        let formattedResult = TelegramFormatter.formatTaskSummary(
+            goal: rawTask.goal,
+            isSuccess: rawTask.isSuccess,
+            rawOutput: rawTask.note
+        )
+
+        await sendMessage(chatId: chatId, text: formattedResult, token: token, asMarkdownV2: false)
     }
 
-    // MARK: - Mac System Diagnostics
+    // MARK: - Mac System Diagnostics (Telegram Styled & Compact)
 
     private func collectMacStatus() async -> String {
+        let ram = SystemMetrics.getRAM()
+        let cpu = SystemMetrics.getCPU()
+        let disk = SystemMetrics.getDisk()
         let battery = getBatteryPercentage()
-        let dateStr = ISO8601DateFormatter().string(from: Date())
         let isAutoEnabled = UserDefaults.standard.object(forKey: "autonomousEnabled") as? Bool ?? true
 
-        return await MainActor.run {
-            let mode = AppState.shared.mode.rawValue
-            let runningTask = AppState.shared.autonomousTasks.first(where: { $0.status == .running })?.goal ?? "Tidak ada (Idle)"
-
-            return """
-            💻 *Status MacBook Coucou*
-            • Waktu: `\(dateStr)`
-            • Island Mode: `\(mode)`
-            • Daya/Baterai: `\(battery)`
-            • Tugas Otonom: `\(runningTask)`
-            • Mode Otonom Aktif: `\(isAutoEnabled ? "Ya" : "Tidak")`
-            """
+        let (mode, taskName) = await MainActor.run {
+            let m = AppState.shared.mode.rawValue
+            let running = AppState.shared.autonomousTasks.first(where: { $0.status == .running })?.goal
+            return (m, running)
         }
+
+        let taskInfo = taskName != nil ? "`\(taskName!)`" : "Idle"
+
+        let text = """
+        💻 *Mochi MacBook Status*
+
+        🧠 *RAM:* `\(String(format: "%.1f", ram.usedGB)) / \(String(format: "%.1f", ram.totalGB)) GB` [\(SystemMetrics.makeBar(percent: ram.percent))] \(String(format: "%.0f", ram.percent))%
+        ⚡ *CPU:* `\(String(format: "%.0f", cpu))%` [\(SystemMetrics.makeBar(percent: cpu))]
+        💾 *Disk:* `\(String(format: "%.1f", disk.freeGB)) GB Bebas` (\(String(format: "%.0f", disk.percentUsed))% terpakai)
+        🔋 *Baterai:* `\(battery)`
+
+        🏝️ *Notch:* `\(mode)` • *Tugas:* \(taskInfo)
+        🤖 *Mode Otonom:* `\(isAutoEnabled ? "Aktif ✓" : "Nonaktif")`
+        """
+
+        return text
     }
 
     private func getBatteryPercentage() -> String {
@@ -386,7 +403,7 @@ public final class TelegramGatewayService: @unchecked Sendable {
         if let output = String(data: data, encoding: .utf8), output.contains("%") {
             let parts = output.components(separatedBy: "\t")
             if parts.count > 1 {
-                return parts[1].components(separatedBy: ";")[0]
+                return parts[1].components(separatedBy: ";")[0].trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
         return "Tersambung Listrik / Mac Desktop"
@@ -442,9 +459,12 @@ public final class TelegramGatewayService: @unchecked Sendable {
 
     // MARK: - Outbound Message Helper
 
-    public func sendMessage(chatId: String, text: String, token: String? = nil) async {
+    public func sendMessage(chatId: String, text: String, token: String? = nil, asMarkdownV2: Bool = true) async {
         guard let activeToken = token ?? botToken else { return }
         guard let url = URL(string: "https://api.telegram.org/bot\(activeToken)/sendMessage") else { return }
+
+        // Jika asMarkdownV2 aktif, konversi teks ke format MarkdownV2 yang aman
+        let formattedText = asMarkdownV2 ? TelegramFormatter.toMarkdownV2(text) : text
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -452,12 +472,28 @@ public final class TelegramGatewayService: @unchecked Sendable {
 
         let payload: [String: Any] = [
             "chat_id": chatId,
-            "text": text,
-            "parse_mode": "Markdown"
+            "text": formattedText,
+            "parse_mode": "MarkdownV2"
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                return
+            }
+        } catch {}
+
+        // Fallback otomatis: jika MarkdownV2 ditolak, kirim sebagai teks murni tanpa parse_mode
+        var fallbackRequest = URLRequest(url: url)
+        fallbackRequest.httpMethod = "POST"
+        fallbackRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let fallbackPayload: [String: Any] = [
+            "chat_id": chatId,
+            "text": text
+        ]
+        fallbackRequest.httpBody = try? JSONSerialization.data(withJSONObject: fallbackPayload)
+        _ = try? await URLSession.shared.data(for: fallbackRequest)
     }
 
     /// Mengirim notifikasi proaktif ke smartphone terdaftar jika ada event kritis/penting.
@@ -504,6 +540,204 @@ public final class TelegramGatewayService: @unchecked Sendable {
             return false
         }
         return false
+    }
+}
+
+// MARK: - Telegram MarkdownV2 Formatter & System Metrics
+
+public enum TelegramFormatter {
+    /// Mengonversi teks umum / markdown ke format MarkdownV2 Telegram yang valid dan ter-escape aman.
+    public static func toMarkdownV2(_ text: String) -> String {
+        var result = ""
+        let lines = text.components(separatedBy: "\n")
+        var inCodeBlock = false
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") {
+                inCodeBlock.toggle()
+                result += "```\n"
+                continue
+            }
+
+            if inCodeBlock {
+                let escaped = line
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "`", with: "\\`")
+                result += escaped + "\n"
+            } else {
+                var processedLine = line
+
+                // Ubah header Markdown (# Judul) menjadi *Judul*
+                if processedLine.hasPrefix("#") {
+                    let clean = processedLine.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+                    processedLine = "*\(clean)*"
+                }
+
+                // Ubah unordered list markdown "- " / "* " menjadi bullet "• "
+                if processedLine.hasPrefix("- ") || processedLine.hasPrefix("* ") {
+                    processedLine = "• " + processedLine.dropFirst(2)
+                }
+
+                result += escapeMarkdownV2Line(processedLine) + "\n"
+            }
+        }
+
+        let trimmedResult = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedResult.count > 3900 {
+            let cut = String(trimmedResult.prefix(3850))
+            return cut + "\n\n_\\.\\.\\. \\(teks diringkas sesuai batas Telegram\\)_"
+        }
+        return trimmedResult
+    }
+
+    private static func escapeMarkdownV2Line(_ line: String) -> String {
+        var escaped = ""
+        var inInlineCode = false
+
+        var i = line.startIndex
+        while i < line.endIndex {
+            let char = line[i]
+
+            if char == "`" {
+                inInlineCode.toggle()
+                escaped.append(char)
+                i = line.index(after: i)
+                continue
+            }
+
+            if inInlineCode {
+                if char == "\\" {
+                    escaped.append("\\\\")
+                } else {
+                    escaped.append(char)
+                }
+                i = line.index(after: i)
+                continue
+            }
+
+            if char == "*" {
+                escaped.append(char)
+                i = line.index(after: i)
+                continue
+            }
+
+            // Karakter khusus yang wajib di-escape di Telegram MarkdownV2 di luar kode
+            let specialChars: Set<Character> = ["_", "[", "]", "(", ")", "~", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"]
+            if specialChars.contains(char) {
+                escaped.append("\\")
+                escaped.append(char)
+            } else {
+                escaped.append(char)
+            }
+
+            i = line.index(after: i)
+        }
+
+        return escaped
+    }
+
+    /// Memformat hasil tugas otonom agar singkat, berestetika, dan bergaya Telegram
+    public static func formatTaskSummary(goal: String, isSuccess: Bool, rawOutput: String) -> String {
+        let statusEmoji = isSuccess ? "✅" : "⚠️"
+        let statusTitle = isSuccess ? "Tugas Selesai" : "Tugas Selesai Sebagian"
+
+        var cleanNote = rawOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanNote.isEmpty {
+            cleanNote = isSuccess ? "Instruksi berhasil dijalankan di Mac." : "Gagal menyelesaikan instruksi."
+        }
+
+        // Jika output berisi dump log panjang, ambil ringkasannya
+        let lines = cleanNote.components(separatedBy: "\n")
+        let formattedBody: String
+        if lines.count > 12 {
+            let topLines = lines.prefix(8).joined(separator: "\n")
+            let bottomLines = lines.suffix(3).joined(separator: "\n")
+            formattedBody = "\(topLines)\n…\n\(bottomLines)"
+        } else {
+            formattedBody = cleanNote
+        }
+
+        let summary = """
+        \(statusEmoji) *\(statusTitle)*
+        🎯 *Target:* `\(goal)`
+
+        \(formattedBody)
+        """
+        return toMarkdownV2(summary)
+    }
+}
+
+// MARK: - Internal System Metrics (RAM, CPU, Disk)
+
+private enum SystemMetrics {
+    static func getRAM() -> (usedGB: Double, totalGB: Double, percent: Double) {
+        var totalMemory: UInt64 = 0
+        var size = MemoryLayout<UInt64>.size
+        sysctlbyname("hw.memsize", &totalMemory, &size, nil, 0)
+        let totalGB = Double(totalMemory) / (1024 * 1024 * 1024)
+
+        var vmStats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let hostPort = mach_host_self()
+
+        let result = withUnsafeMutablePointer(to: &vmStats) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
+                host_statistics64(hostPort, HOST_VM_INFO64, intPtr, &count)
+            }
+        }
+
+        if result == KERN_SUCCESS {
+            let pageSize = UInt64(getpagesize())
+            let active = UInt64(vmStats.active_count) * pageSize
+            let wired = UInt64(vmStats.wire_count) * pageSize
+            let compressed = UInt64(vmStats.compressor_page_count) * pageSize
+            let usedBytes = active + wired + compressed
+            let usedGB = Double(usedBytes) / (1024 * 1024 * 1024)
+            let percent = totalMemory > 0 ? (Double(usedBytes) / Double(totalMemory)) * 100.0 : 0.0
+            return (usedGB, totalGB, percent)
+        }
+        return (0, totalGB, 0)
+    }
+
+    static func getCPU() -> Double {
+        var cpuLoad = host_cpu_load_info()
+        var cpuCount = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.size / MemoryLayout<integer_t>.size)
+        let hostPort = mach_host_self()
+
+        let cpuResult = withUnsafeMutablePointer(to: &cpuLoad) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(cpuCount)) { intPtr in
+                host_statistics(hostPort, HOST_CPU_LOAD_INFO, intPtr, &cpuCount)
+            }
+        }
+
+        if cpuResult == KERN_SUCCESS {
+            let user = Double(cpuLoad.cpu_ticks.0)
+            let sys = Double(cpuLoad.cpu_ticks.1)
+            let idle = Double(cpuLoad.cpu_ticks.2)
+            let nice = Double(cpuLoad.cpu_ticks.3)
+            let totalTicks = user + sys + idle + nice
+            return totalTicks > 0 ? ((user + sys + nice) / totalTicks) * 100.0 : 0.0
+        }
+        return 0.0
+    }
+
+    static func getDisk() -> (freeGB: Double, totalGB: Double, percentUsed: Double) {
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: "/"),
+           let totalSpace = attrs[.systemSize] as? Int64,
+           let freeSpace = attrs[.systemFreeSize] as? Int64 {
+            let freeGB = Double(freeSpace) / (1024 * 1024 * 1024)
+            let totalGB = Double(totalSpace) / (1024 * 1024 * 1024)
+            let percentUsed = totalSpace > 0 ? ((Double(totalSpace - freeSpace)) / Double(totalSpace)) * 100.0 : 0.0
+            return (freeGB, totalGB, percentUsed)
+        }
+        return (0, 0, 0)
+    }
+
+    static func makeBar(percent: Double, length: Int = 8) -> String {
+        let filled = max(0, min(length, Int((percent / 100.0) * Double(length))))
+        let empty = length - filled
+        return String(repeating: "■", count: filled) + String(repeating: "□", count: empty)
     }
 }
 

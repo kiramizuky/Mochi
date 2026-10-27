@@ -87,3 +87,4 @@ try photoBytes.write(to: tempUrl)
 print("File tersimpan di: \(tempUrl.path)")
 
 print("=== SELURUH PENGUJIAN HARDWARE SELESAI DENGAN STATUS LULUS (100%) ===")
+

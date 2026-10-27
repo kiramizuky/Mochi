@@ -29,6 +29,18 @@
 
 ### macOS
 
+- **Peningkatan Respons Telegram: Format MarkdownV2 & Estetika Style Telegram**:
+  - 🎨 **Format Jawaban MarkdownV2 Telegram (`TelegramFormatter.toMarkdownV2`)**:
+    - Seluruh pesan teks balasan dari Mochi ke Telegram kini otomatis dikonversikan dan di-escape secara presisi ke format `MarkdownV2` Telegram (menjaga reserved characters `_`, `*`, `[`, `]`, `(`, `)`, `~`, `` ` ``, `>`, `#`, `+`, `-`, `=`, `|`, `{`, `}`, `.`, `!`).
+    - Dilengkapi mekanisme *smart fallback*: bila `MarkdownV2` ditolak oleh Telegram Bot API karena karakter entitas, pesan otomatis dikirim ulang sebagai plain text bersih sehingga tidak ada pesan yang pernah hilang.
+  - 🧠 **Format Laporan Sistem Singkat & Padat (`SystemMetrics` & `/status`)**:
+    - Menghadirkan metrik RAM (digunakan, total, persentase) secara native via `Darwin.host_statistics64` (`HOST_VM_INFO64`), CPU Load (`HOST_CPU_LOAD_INFO`), dan sisa penyimpanan Disk secara instan tanpa child process bising.
+    - Dilengkapi visual progress bar ringkas bergaya Telegram: `[■■■■■□□□] 69%`.
+    - Laporan `/status` kini tampil elegan, terstruktur, dan langsung ke inti (tidak ditulis mentah atau apa adanya).
+  - 🎯 **Peringkasan Hasil Tugas Otonom (`TelegramFormatter.formatTaskSummary`)**:
+    - Hasil instruksi otonom diformat padat dengan status emoji (`✅` / `⚠️`), target instruksi monospace `` `...` ``, dan ekstraksi intisari output tanpa dump log berlebihan.
+
+
 - **Perbaikan Bug Force Close / Crash Perintah Telegram & Thread-Safety Autonomous Agent**:
   - 🛡️ **Pencegahan Crash `_dispatch_assert_queue_fail` pada `AutonomousAgent.enabled`**:
     - Memperbaiki akar penyebab *crash* seketika (*SIGILL / Illegal Instruction 4*) saat perintah diterima via Telegram background cooperative pool. Sebelumnya `AutonomousAgent.enabled` memanggil `MainActor.assumeIsolated` tanpa memeriksa apakah thread saat itu adalah main thread.
