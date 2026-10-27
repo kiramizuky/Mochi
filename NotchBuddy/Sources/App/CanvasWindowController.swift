@@ -57,16 +57,49 @@ public final class CanvasWindowController: NSObject, NSWindowDelegate {
         CanvasManager.shared.isPresented = false
     }
 
-    private func placeBelowIsland(_ win: NSWindow) {
-        let screen = IslandWindowController.notchScreen() ?? NSScreen.main ?? win.screen
+    /// Menerapkan status Pin-to-Desktop dan transparansi dinamis (Floating HUD mode).
+    public func applyPinState(isPinned: Bool, opacity: Double = 0.90) {
+        guard let win = window else { return }
+        if isPinned {
+            win.level = .floating
+            win.collectionBehavior = [.canJoinAllSpaces, .stationary]
+            win.alphaValue = CGFloat(opacity)
+        } else {
+            win.level = .normal
+            win.collectionBehavior = []
+            win.alphaValue = 1.0
+        }
+    }
+
+    /// Memindahkan jendela Canvas secara animatif ke sudut layar monitor yang dipilih.
+    public func dockTo(corner: CanvasDockCorner) {
+        guard let win = window else { return }
+        let screen = win.screen ?? IslandWindowController.notchScreen() ?? NSScreen.main
         guard let screen else { win.center(); return }
         let visible = screen.visibleFrame
-        let islandBottom = screen.frame.maxY - 320 - 12
-        let top = min(visible.maxY, islandBottom)
         var frame = win.frame
-        frame.size.height = min(frame.height, max(top - visible.minY - 12, win.minSize.height))
-        frame.origin.x = visible.midX - frame.width / 2
-        frame.origin.y = max(visible.minY + 12, top - frame.height)
-        win.setFrame(frame, display: true)
+
+        switch corner {
+        case .belowNotch:
+            let islandBottom = screen.frame.maxY - 320 - 12
+            let top = min(visible.maxY, islandBottom)
+            frame.origin.x = visible.midX - frame.width / 2
+            frame.origin.y = max(visible.minY + 12, top - frame.height)
+        case .topRight:
+            frame.origin.x = visible.maxX - frame.width - 20
+            frame.origin.y = visible.maxY - frame.height - 20
+        case .bottomRight:
+            frame.origin.x = visible.maxX - frame.width - 20
+            frame.origin.y = visible.minY + 20
+        case .center:
+            frame.origin.x = visible.midX - frame.width / 2
+            frame.origin.y = visible.midY - frame.height / 2
+        }
+
+        win.setFrame(frame, display: true, animate: true)
+    }
+
+    private func placeBelowIsland(_ win: NSWindow) {
+        dockTo(corner: .belowNotch)
     }
 }

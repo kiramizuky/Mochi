@@ -7,6 +7,8 @@ public enum ArtifactType: String, Codable, Sendable, CaseIterable {
     case table    = "table"      // Spreadsheet TSV/CSV/Grid data
     case code     = "code"       // Snippet kode / script automasi
     case chart    = "chart"      // Diagram alur, Mermaid, ASCII chart
+    case html     = "html"       // Live Web Sandbox / Visualisasi HTML5
+    case form     = "form"       // Form input & widget interaktif
 
     public var iconName: String {
         switch self {
@@ -14,6 +16,8 @@ public enum ArtifactType: String, Codable, Sendable, CaseIterable {
         case .table:    return "tablecells.fill"
         case .code:     return "curlybraces"
         case .chart:    return "chart.bar.xaxis"
+        case .html:     return "globe.americas.fill"
+        case .form:     return "slider.horizontal.3"
         }
     }
 
@@ -23,6 +27,8 @@ public enum ArtifactType: String, Codable, Sendable, CaseIterable {
         case .table:    return "Tabel Data"
         case .code:     return "Kode"
         case .chart:    return "Diagram"
+        case .html:     return "Web Sandbox"
+        case .form:     return "Form Interaktif"
         }
     }
 }

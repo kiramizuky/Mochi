@@ -29,6 +29,22 @@
 
 ### macOS
 
+- **Interactive Canvas Studio 2.0 & Apple Ecosystem (Siri & Shortcuts) (Paket 13)**:
+  - 🎨 **Interactive Widgets & WebKit Sandbox di Canvas (`CanvasView.swift`, `CanvasArtifact.swift`)**:
+    - Dukungan tipe artefak baru: `.html` ("Web Sandbox", icon `globe.americas.fill`) via WebKit native `WKWebView` dengan background transparan, dan `.form` ("Form Interaktif", icon `slider.horizontal.3`) untuk input dinamis (teks, number, menu pilihan, toggle) dan aksi instan dengan umpan balik langsung.
+    - Filter pencarian instan live (`searchText`) pada tabel data Canvas dengan counter baris live, serta penyortiran kolom interaktif (ascending/descending numerik dan alfabetis) saat mengklik header tabel.
+  - 📌 **Pin-to-Desktop & Canvas Floating HUD (`CanvasManager.swift`, `CanvasWindowController.swift`)**:
+    - Jendela Canvas kini dapat disematkan selalu di atas semua aplikasi (`.floating` window level & `.canJoinAllSpaces`) dengan tombol Pin di header bar.
+    - Kontrol transparansi kaca dinamis (Solid 100%, Kaca Lembut 85%, Kaca Transparan 70%) untuk mode multitasking tanpa menghalangi ruang kerja.
+    - Pilihan posisi docking 4 sudut layar monitor: Bawah Notch, Kanan Atas, Kanan Bawah, atau Tengah Layar dengan transisi posisi halus.
+  - ⚡ **Apple Shortcuts & Siri Deep Integration (`AppleShortcutsService.swift`, `AppDelegate.swift`)**:
+    - Eksekusi native Apple Shortcuts via CLI macOS `/usr/bin/shortcuts list` dan `shortcuts run <name> -i <input>` (`shortcuts_list_shortcuts`, `shortcuts_run_shortcut`).
+    - Penanganan URL Scheme dua arah (`coucou://` & `mochi://`) untuk instruksi instan dari Siri Shortcuts dan widget macOS: `ask` (buka prompt dengan teks), `run`/`goal` (jalankan tugas otonom), `canvas` (tampilkan widget), `sentry` (aktifkan/nonaktifkan penjaga Away), dan `autoheal` (audit kesehatan).
+  - 🛠️ **3 Tools LLM Baru & 6 Aliases di `ToolExecutor.swift`**:
+    - `shortcuts_list_shortcuts`, `shortcuts_run_shortcut`, `canvas_present_widget`.
+    - Aliases: `apple_shortcuts`, `list_shortcuts`, `run_shortcut`, `execute_shortcut`, `show_canvas`, `open_canvas`.
+    - Total tools bertambah dari 89 menjadi **92 tools**, 100% patuh validasi skema Gemini OpenAPI.
+
 - **Proactive Sentry & Autonomous Health Watchers (Paket 11)**:
   - 🛡️ **Physical Intruder & Anti-Theft Guard (Away Sentry Mode - `ProactiveSentryService`)**: Penjaga fisik mandiri saat MacBook ditinggalkan di tempat umum atau kafe. Mendeteksi status lock screen macOS (`com.apple.screenIsLocked`) atau pengaktifan manual (`sentry_enable_away_mode` / `away_sentry`). Jika terdeteksi orang asing menatap layar via `FaceRecognitionService`, asisten memotret senyap dan mengirimkan peringatan darurat ke Telegram pemilik lengkap dengan foto, timestamp, dan nama Wi-Fi aktif.
   - 📡 **LAN New-Device Sentry (Wi-Fi Watcher Daemon)**: Pemantau pasif jaringan Wi-Fi lokal berbasis perbedaan (diff delta) perangkat ARP (`sentry_scan_wifi_intruders` / `wifi_sentry`). Menampilkan proactive alert chip di Notch Island seketika bila ada perangkat asing baru terhubung ke Wi-Fi, dengan opsi verifikasi perangkat terpercaya (`sentry_trust_device` / `trust_device`).

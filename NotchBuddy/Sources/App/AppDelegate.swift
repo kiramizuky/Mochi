@@ -256,4 +256,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         frame.origin.y = max(visible.minY + 12, top - frame.height)
         win.setFrame(frame, display: true)
     }
+
+    // MARK: - Apple Shortcuts & Siri Custom URL Scheme Routing (coucou:// & mochi://)
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            AppleShortcutsService.shared.handleIncomingURL(url)
+        }
+    }
 }

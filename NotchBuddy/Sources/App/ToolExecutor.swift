@@ -118,6 +118,7 @@ final class ToolExecutor: @unchecked Sendable {
         editorGotoFileLineDef, gitSmartCommitDef, ghPrReviewSummaryDef,
         sentryEnableAwayModeDef, sentryCheckStatusDef, sentryScanWifiIntrudersDef,
         sentryTrustDeviceDef, sentryAutohealCheckDef,
+        shortcutsListShortcutsDef, shortcutsRunShortcutDef, canvasPresentWidgetDef,
     ]
 
     /// Semua alat yang tersedia termasuk alat dinamis yang disintesis on-the-fly.
@@ -1249,6 +1250,45 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    static let shortcutsListShortcutsDef = LLMToolDef(
+        name: "shortcuts_list_shortcuts",
+        description: "Melihat daftar semua Apple Shortcuts atau Automations yang terpasang di Mac pengguna.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "filter": .object(["type": .string("string"), "description": .string("Filter kata kunci nama shortcut (opsional).")]),
+            ]),
+        ])
+    )
+
+    static let shortcutsRunShortcutDef = LLMToolDef(
+        name: "shortcuts_run_shortcut",
+        description: "Menjalankan Apple Shortcut tertentu di Mac pengguna dengan opsi teks masukan (input).",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object(["type": .string("string"), "description": .string("Nama shortcut persis yang ingin dijalankan.")]),
+                "input": .object(["type": .string("string"), "description": .string("Teks masukan untuk shortcut (opsional).")]),
+            ]),
+            "required": .array([.string("name")]),
+        ])
+    )
+
+    static let canvasPresentWidgetDef = LLMToolDef(
+        name: "canvas_present_widget",
+        description: "Menampilkan widget interaktif, formulir dinamis, atau HTML/Web Sandbox ke jendela Canvas Studio yang dapat disematkan (floating HUD) di layar.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "title": .object(["type": .string("string"), "description": .string("Judul widget/formulir.")]),
+                "type": .object(["type": .string("string"), "description": .string("Tipe widget: 'html' (Web sandbox), 'form' (Formulir dinamis), 'table', 'code', 'document'.")]),
+                "content": .object(["type": .string("string"), "description": .string("Konten HTML, spesifikasi JSON form, markdown, atau teks tabel.")]),
+                "pin": .object(["type": .string("boolean"), "description": .string("Apakah disematkan selalu di atas layar sebagai Floating HUD? (opsional, default: false).")]),
+            ]),
+            "required": .array([.string("title"), .string("type"), .string("content")]),
+        ])
+    )
+
     static let officeListSheetsDef = LLMToolDef(
         name: "office_list_sheets",
         description: "List all worksheet/tab names in the active Microsoft Excel or Numbers workbook.",
@@ -1528,6 +1568,12 @@ final class ToolExecutor: @unchecked Sendable {
         "trust_mac": "sentry_trust_device",
         "auto_heal": "sentry_autoheal_check",
         "autoheal_check": "sentry_autoheal_check",
+        "apple_shortcuts": "shortcuts_list_shortcuts",
+        "list_shortcuts": "shortcuts_list_shortcuts",
+        "run_shortcut": "shortcuts_run_shortcut",
+        "execute_shortcut": "shortcuts_run_shortcut",
+        "show_canvas": "canvas_present_widget",
+        "open_canvas": "canvas_present_widget",
     ]
 
     /// Short, human-readable target for UI events and audit records.
@@ -1624,6 +1670,9 @@ final class ToolExecutor: @unchecked Sendable {
         case "sentry_scan_wifi_intruders": raw = "scan_wifi"
         case "sentry_trust_device":     raw = input["mac"]?.stringValue ?? "trust_device"
         case "sentry_autoheal_check":   raw = "autoheal"
+        case "shortcuts_list_shortcuts": raw = input["filter"]?.stringValue ?? "all shortcuts"
+        case "shortcuts_run_shortcut":  raw = input["name"]?.stringValue
+        case "canvas_present_widget":   raw = input["title"]?.stringValue
         default:               raw = nil
         }
         let value = raw?.isEmpty == false ? raw! : name
@@ -1758,6 +1807,9 @@ final class ToolExecutor: @unchecked Sendable {
         case "sentry_scan_wifi_intruders": category = .network; target = "wifi_sentry"
         case "sentry_trust_device":     category = .appControl; target = input["mac"]?.stringValue ?? "trust_device"
         case "sentry_autoheal_check":   category = .shell; target = "autoheal"
+        case "shortcuts_list_shortcuts": category = .read;  target = "apple_shortcuts"
+        case "shortcuts_run_shortcut":  category = .shell; target = input["name"]?.stringValue ?? "shortcut"
+        case "canvas_present_widget":   category = .read;  target = input["title"]?.stringValue ?? "canvas_widget"
         default:
             if let dyn = DynamicToolSynthesizer.shared.getTool(id: name) {
                 category = .shell
@@ -2225,6 +2277,19 @@ final class ToolExecutor: @unchecked Sendable {
             }
             let report = await ProactiveSentryService.shared.runAutoHealAudit()
             return ToolResult(output: report.summaryMarkdown)
+        case "shortcuts_list_shortcuts":
+            let filter = input["filter"]?.stringValue
+            let (ok, out, _) = await AppleShortcutsService.shared.listShortcuts(filter: filter)
+            return ToolResult(output: out, isError: !ok)
+        case "shortcuts_run_shortcut":
+            guard let name = input["name"]?.stringValue, !name.isEmpty else {
+                return ToolResult(output: "Nama shortcut harus diisi.", isError: true)
+            }
+            let scInput = input["input"]?.stringValue
+            let (ok, out) = await AppleShortcutsService.shared.runShortcut(name: name, input: scInput)
+            return ToolResult(output: out, isError: !ok)
+        case "canvas_present_widget":
+            return await runCanvasPresentWidget(input: input)
         default:
             if let _ = DynamicToolSynthesizer.shared.getTool(id: name) {
                 var args: [String: String] = [:]
@@ -2587,6 +2652,26 @@ final class ToolExecutor: @unchecked Sendable {
             CanvasManager.shared.present(artifact: artifact)
         }
         return ToolResult(output: "Artifact '\(title)' (\(type.displayName)) berhasil dibuka di Canvas Artifacts Studio.", isError: false, exitCode: 0)
+    }
+
+    private func runCanvasPresentWidget(input: JSONValue) async -> ToolResult {
+        guard let title = input["title"]?.stringValue, !title.isEmpty,
+              let content = input["content"]?.stringValue, !content.isEmpty else {
+            return ToolResult(output: "Argumen 'title' dan 'content' diperlukan untuk menampilkan widget Canvas.", isError: true, exitCode: 1)
+        }
+        let rawType = input["type"]?.stringValue ?? "html"
+        let type = ArtifactType(rawValue: rawType) ?? .html
+        let shouldPin = input["pin"]?.boolValue ?? false
+        let artifact = CanvasArtifact(title: title, type: type, content: content)
+
+        await MainActor.run {
+            CanvasManager.shared.present(artifact: artifact)
+            if shouldPin && !CanvasManager.shared.isPinned {
+                CanvasManager.shared.togglePin()
+            }
+        }
+        let pinStatus = shouldPin ? " (dan disematkan sebagai Floating HUD)" : ""
+        return ToolResult(output: "Widget '\(title)' (\(type.displayName)) berhasil ditampilkan di Canvas Studio\(pinStatus).", isError: false, exitCode: 0)
     }
 
     private func runGuiClick(input: JSONValue) -> ToolResult {

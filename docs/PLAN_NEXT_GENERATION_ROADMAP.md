@@ -129,14 +129,14 @@ Mencapai pengalaman bercakap-cakap yang setara dengan asisten masa depan:
 | :---: | :---: | :--- | :--- |
 | **Tahap 1** | ✅ **Selesai** | **Paket 10: Database Safe Explorer & Git/IDE Workflows** | Query DB aman, smart commit otomatis, buka baris error di IDE. |
 | **Tahap 2** | ✅ **Selesai** | **Paket 11: Intruder Sentry (Telegram Alert) & Auto-Healer** | MacBook aman saat ditinggal di kafe/kantor, Wi-Fi Watcher, dan pemulihan crash otomatis. |
-| **Tahap 3** | ⏳ **Berikutnya** | **Paket 13: Interactive Canvas 2.0 & Floating HUD** | Visualisasi data server dan hasil riset semakin interaktif, form dinamis, dan Siri Shortcuts. |
-| **Tahap 4** | ⏳ **Mendatang** | **Paket 12: Real-Time Voice Duplex 2.0 (Gemini Live)** | Pengalaman komunikasi suara sekelas JARVIS dengan latensi ultra-rendah dan interupsi alami. |
+| **Tahap 3** | ✅ **Selesai** | **Paket 13: Interactive Canvas 2.0 & Floating HUD** | Visualisasi data server interaktif, live search/sort, HTML sandbox, form dinamis, dan Siri Shortcuts. |
+| **Tahap 4** | ⏳ **Berikutnya** | **Paket 12: Real-Time Voice Duplex 2.0 (Gemini Live)** | Pengalaman komunikasi suara sekelas JARVIS dengan latensi ultra-rendah dan interupsi alami. |
 
 ---
 
 ## 5. Rencana Aksi Segera (Next Immediate Action)
 
-Untuk melanjutkan implementasi berikutnya, fokus kita adalah **Tahap 3: Paket 13 (Interactive Canvas Studio 2.0 & Apple Shortcuts)**:
-1. Menambahkan widget interaktif di Canvas (form input dinamis, dropdown sorting, live HTML sandbox).
-2. Membangun mode Floating HUD (Pin-to-Desktop) dengan transparansi dinamis agar pengguna dapat multitasking.
-3. Mengembangkan integrasi Apple App Intents & Siri Shortcuts (`MochiAppIntents`).
+Untuk melanjutkan implementasi berikutnya, fokus kita adalah **Tahap 4: Paket 12 (Real-Time Full-Duplex Voice 2.0 & Conversational Live Stream)**:
+1. Mengintegrasikan Google Gemini Multimodal Live Streaming API / WebRTC Audio Stream untuk percakapan suara sub-detik (< 400ms).
+2. Mengembangkan interupsi suara alami (*Barge-in detection*) saat pengguna menyela asisten yang sedang berbicara.
+3. Modulasi emosi dan intonasi vokal adaptif konteks (nada berbisik malam hari, tegas saat alert crash, ceria saat sapaan pagi).
