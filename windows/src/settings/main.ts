@@ -1240,6 +1240,177 @@ function securitySection(): HTMLElement {
   return section;
 }
 
+function sentinelSection(): HTMLElement {
+  const section = h("section", {});
+  section.append(h("h2", {}, h("span", { text: "Security Sentinel & Network" })));
+  section.append(
+    h("div", {
+      class: "hint",
+      text: "Audit keamanan Windows (Firewall, BitLocker, Antivirus, UAC, Port), pemindaian perangkat LAN, dan diagnostik latensi jaringan (Paket 5 Blueprint).",
+    }),
+  );
+
+  const buttonRow = h("div", { class: "row", style: "gap: 8px; flex-wrap: wrap;" });
+  const resultBox = h("div", { class: "sentinel-result-box", style: "margin-top: 12px;" });
+
+  const btnAudit = h("button", {
+    class: "primary",
+    text: "Audit Keamanan PC",
+    onclick: async () => {
+      btnAudit.disabled = true;
+      clear(resultBox);
+      resultBox.append(h("div", { class: "hint", text: "Menjalankan audit keamanan Windows…" }));
+      try {
+        const report = await Bridge.sentinelAudit();
+        clear(resultBox);
+        const scoreBadge = h("div", {
+          class: "notice ok",
+          style: "font-weight: 600; font-size: 14px; margin-bottom: 8px;",
+          text: `Skor Keamanan PC: ${report.healthScore}/100 (${report.openPortsCount} Port TCP Listening)`,
+        });
+        resultBox.append(scoreBadge);
+
+        for (const c of report.checks) {
+          resultBox.append(
+            h("div", { class: "row", style: "justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding: 4px 0;" },
+              h("span", { style: "font-size: 13px;", text: `${c.isPassed ? "✅" : "⚠️"} ${c.title}` }),
+              h("span", { class: "path", text: c.statusText }),
+            ),
+          );
+        }
+      } catch (err) {
+        clear(resultBox);
+        resultBox.append(h("div", { class: "notice err", text: `Audit gagal: ${String(err)}` }));
+      } finally {
+        btnAudit.disabled = false;
+      }
+    },
+  }) as HTMLButtonElement;
+
+  const btnScan = h("button", {
+    text: "Pindai Perangkat LAN",
+    onclick: async () => {
+      btnScan.disabled = true;
+      clear(resultBox);
+      resultBox.append(h("div", { class: "hint", text: "Memindai perangkat di jaringan lokal…" }));
+      try {
+        const scan = await Bridge.sentinelScan();
+        clear(resultBox);
+        resultBox.append(h("div", { class: "hint", text: scan.summaryText }));
+        if (scan.devices.length > 0) {
+          for (const d of scan.devices) {
+            resultBox.append(
+              h("div", { class: "row", style: "justify-content: space-between; padding: 4px 0;" },
+                h("span", { style: "font-weight: 500;", text: d.ipAddress }),
+                h("span", { class: "path", text: `${d.deviceTypeGuess} (${d.macAddress})` }),
+              ),
+            );
+          }
+        }
+      } catch (err) {
+        clear(resultBox);
+        resultBox.append(h("div", { class: "notice err", text: `Scan gagal: ${String(err)}` }));
+      } finally {
+        btnScan.disabled = false;
+      }
+    },
+  }) as HTMLButtonElement;
+
+  const btnDiag = h("button", {
+    text: "Diagnostik Koneksi",
+    onclick: async () => {
+      btnDiag.disabled = true;
+      clear(resultBox);
+      resultBox.append(h("div", { class: "hint", text: "Menguji latensi ping & DNS…" }));
+      try {
+        const diag = await Bridge.sentinelDiagnostics();
+        clear(resultBox);
+        resultBox.append(h("div", { class: "notice ok", text: diag.summaryText }));
+      } catch (err) {
+        clear(resultBox);
+        resultBox.append(h("div", { class: "notice err", text: `Diagnostik gagal: ${String(err)}` }));
+      } finally {
+        btnDiag.disabled = false;
+      }
+    },
+  }) as HTMLButtonElement;
+
+  buttonRow.append(btnAudit, btnScan, btnDiag);
+  section.append(buttonRow, resultBox);
+  return section;
+}
+
+function memorySection(): HTMLElement {
+  const section = h("section", {});
+  section.append(h("h2", {}, h("span", { text: "JARVIS Long-Term Memory" })));
+  section.append(
+    h("div", {
+      class: "hint",
+      text: "Fakta preferensi dan konteks jangka panjang tentang pengguna yang disuntikkan secara dinamis ke system prompt AI.",
+    }),
+  );
+
+  const container = h("div", { style: "margin-top: 8px;" });
+
+  const inputRow = h("div", { class: "row", style: "gap: 8px; margin-bottom: 8px;" });
+  const inputFact = h("input", {
+    type: "text",
+    placeholder: "Tambahkan fakta baru (misal: 'Saya menyukai TypeScript dan Rust')",
+    style: "flex: 1; min-width: 260px;",
+  }) as HTMLInputElement;
+
+  const btnAdd = h("button", {
+    class: "primary",
+    text: "Ingat Fakta",
+    onclick: async () => {
+      const val = inputFact.value.trim();
+      if (!val) return;
+      try {
+        await Bridge.memoryRemember(val);
+        inputFact.value = "";
+        void renderList();
+      } catch (err) {
+        console.error("Gagal menyimpan memori", err);
+      }
+    },
+  });
+
+  inputRow.append(inputFact, btnAdd);
+  section.append(inputRow);
+
+  async function renderList() {
+    clear(container);
+    try {
+      const items = (await Bridge.memoryAll()) ?? [];
+      if (items.length === 0) {
+        container.append(h("div", { class: "hint", text: "Belum ada fakta yang tersimpan di memori jangka panjang." }));
+        return;
+      }
+      for (const item of items) {
+        const row = h("div", { class: "row", style: "justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06);" },
+          h("span", { style: "font-size: 13px;", text: `• ${item.fact}` }),
+          h("button", {
+            class: "danger",
+            style: "padding: 2px 8px; font-size: 11px;",
+            text: "Lupakan",
+            onclick: async () => {
+              await Bridge.memoryForget(item.id);
+              void renderList();
+            },
+          }),
+        );
+        container.append(row);
+      }
+    } catch (err) {
+      container.append(h("div", { class: "notice err", text: `Gagal memuat memori: ${String(err)}` }));
+    }
+  }
+
+  void renderList();
+  section.append(container);
+  return section;
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -1285,6 +1456,8 @@ async function main() {
     integrationsSection(present, health),
     generalSection(),
     securitySection(),
+    sentinelSection(),
+    memorySection(),
     updateSection(),
     logSection(),
     crashSection(crashes),

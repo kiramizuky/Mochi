@@ -153,6 +153,17 @@ export const Bridge = {
   auditRecent: (limit?: number) => call<AuditEventItem[]>("audit_recent", { limit }),
   auditExport: () => callOrThrow<string>("audit_export"),
   auditOpenFolder: () => callOrThrow<void>("audit_open_folder"),
+
+  // ── Network Sentinel & PC Security (Blueprint Paket 5) ────────────────────
+  sentinelAudit: () => callOrThrow<LaptopSecurityReport>("sentinel_audit_pc"),
+  sentinelScan: () => callOrThrow<NetworkScanReport>("sentinel_scan_network"),
+  sentinelDiagnostics: (targetHost?: string) =>
+    callOrThrow<NetworkDiagnosticsReport>("sentinel_diagnostics", { targetHost }),
+
+  // ── JARVIS Long-Term Memory (Phase 5) ─────────────────────────────────────
+  memoryRemember: (fact: string) => callOrThrow<MemoryItem>("memory_remember", { fact }),
+  memoryAll: () => call<MemoryItem[]>("memory_all"),
+  memoryForget: (id: string) => callOrThrow<boolean>("memory_forget", { id }),
 };
 
 export interface IntegrationUpdate {
@@ -289,6 +300,56 @@ export interface AuditEventItem {
   app: string;
   prev: string;
   mac: string;
+}
+
+export interface SecurityCheckItem {
+  name: string;
+  title: string;
+  isPassed: boolean;
+  statusText: string;
+  details: string;
+  recommendation: string;
+}
+
+export interface LaptopSecurityReport {
+  timestamp: string;
+  healthScore: number;
+  checks: SecurityCheckItem[];
+  openPortsCount: number;
+  summaryMarkdown: string;
+}
+
+export interface DiscoveredNetworkDevice {
+  ipAddress: string;
+  macAddress: string;
+  hostname: string;
+  isGateway: boolean;
+  deviceTypeGuess: string;
+}
+
+export interface NetworkScanReport {
+  timestamp: string;
+  activeInterface: string;
+  localIp: string;
+  gatewayIp: string;
+  devices: DiscoveredNetworkDevice[];
+  summaryText: string;
+}
+
+export interface NetworkDiagnosticsReport {
+  timestamp: string;
+  targetHost: string;
+  isConnected: boolean;
+  latencyMs: number;
+  dnsResolutionMs: number;
+  publicIp?: string;
+  summaryText: string;
+}
+
+export interface MemoryItem {
+  id: string;
+  fact: string;
+  createdAt: string;
 }
 
 /** Same as `call`, but surfaces the error so the UI can show what went wrong. */

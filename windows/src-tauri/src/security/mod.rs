@@ -18,6 +18,26 @@ pub use killswitch::{init as init_killswitch, is_killed, kill, resume};
 #[allow(unused_imports)]
 pub use policy::{normalize_scope, Capability, CapabilityGrant, GrantMode, PolicyFile, Scope};
 
+pub fn record_audit(
+    event: &str,
+    capability: Option<&str>,
+    scope: Option<&str>,
+    target: Option<&str>,
+    decision: &str,
+    rule: &str,
+    outcome: &str,
+) {
+    audit::record(&AuditEntry {
+        event: event.to_string(),
+        capability: capability.map(String::from),
+        scope: scope.map(String::from),
+        target: target.map(String::from),
+        decision: decision.to_string(),
+        rule: rule.to_string(),
+        outcome: outcome.to_string(),
+    });
+}
+
 use serde::Serialize;
 use tauri::AppHandle;
 

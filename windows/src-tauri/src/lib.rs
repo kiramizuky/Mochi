@@ -8,10 +8,12 @@ mod integrations;
 mod island;
 mod launchers;
 mod log;
+mod memory;
 mod pipe;
 mod providers;
 mod secrets;
 mod security;
+mod sentinel;
 mod settings;
 mod smoke;
 mod tray;
@@ -530,6 +532,96 @@ fn open_settings_window(app: AppHandle) {
     show_settings_window(&app);
 }
 
+// ── Sentinel & Memory Commands ───────────────────────────────────────────────
+
+#[tauri::command]
+async fn sentinel_audit_pc() -> Result<sentinel::LaptopSecurityReport, String> {
+    if security::is_killed() {
+        return Err("Action blocked: kill switch is engaged".into());
+    }
+    security::record_audit(
+        "sentinel.audit_pc",
+        Some("app.control"),
+        None,
+        Some("pc_security_audit"),
+        "allow",
+        "user_action",
+        "success",
+    );
+    Ok(sentinel::audit_pc_security())
+}
+
+#[tauri::command]
+async fn sentinel_scan_network() -> Result<sentinel::NetworkScanReport, String> {
+    if security::is_killed() {
+        return Err("Action blocked: kill switch is engaged".into());
+    }
+    security::record_audit(
+        "sentinel.scan_network",
+        Some("net.request"),
+        None,
+        Some("lan_device_scan"),
+        "allow",
+        "user_action",
+        "success",
+    );
+    Ok(sentinel::scan_local_network())
+}
+
+#[tauri::command]
+async fn sentinel_diagnostics(
+    target_host: Option<String>,
+) -> Result<sentinel::NetworkDiagnosticsReport, String> {
+    if security::is_killed() {
+        return Err("Action blocked: kill switch is engaged".into());
+    }
+    security::record_audit(
+        "sentinel.diagnostics",
+        Some("net.request"),
+        None,
+        target_host.as_deref(),
+        "allow",
+        "user_action",
+        "success",
+    );
+    Ok(sentinel::run_network_diagnostics(target_host).await)
+}
+
+#[tauri::command]
+fn memory_remember(fact: String) -> Result<memory::MemoryItem, String> {
+    let (item, _) = memory::remember(&fact)?;
+    security::record_audit(
+        "memory.remember",
+        Some("fs.write"),
+        None,
+        Some(&item.id),
+        "allow",
+        "user_action",
+        "success",
+    );
+    Ok(item)
+}
+
+#[tauri::command]
+fn memory_all() -> Vec<memory::MemoryItem> {
+    memory::all()
+}
+
+#[tauri::command]
+fn memory_forget(id: String) -> Result<bool, String> {
+    let res = memory::forget(&id)?;
+    security::record_audit(
+        "memory.forget",
+        Some("fs.write"),
+        None,
+        Some(&id),
+        "allow",
+        "user_action",
+        "success",
+    );
+    Ok(res)
+}
+
 pub fn run() {
     // Before anything else can panic, so a crash leaves a local report.
     crash::install();
@@ -604,6 +696,12 @@ pub fn run() {
             security::audit_recent,
             security::audit_export,
             security::audit_open_folder,
+            sentinel_audit_pc,
+            sentinel_scan_network,
+            sentinel_diagnostics,
+            memory_remember,
+            memory_all,
+            memory_forget,
         ])
         .setup(move |app| {
             security::init_killswitch();

@@ -122,12 +122,62 @@ pub async fn send(
         attachments,
     });
 
+    let q_lower = query.to_lowercase();
+
+    // JARVIS Direct Action: Remember user facts
+    if q_lower.starts_with("ingat bahwa ") || q_lower.starts_with("ingat: ") || q_lower.starts_with("remember that ") {
+        let fact = query
+            .trim_start_matches("ingat bahwa ")
+            .trim_start_matches("ingat: ")
+            .trim_start_matches("remember that ")
+            .trim();
+        if !fact.is_empty() {
+            let _ = crate::memory::remember(fact);
+            let reply = format!("Baik, saya sudah mengingatnya: \"{}\"", fact);
+            chat.push(Turn {
+                role: "assistant",
+                text: reply.clone(),
+                attachments: Vec::new(),
+            });
+            return Ok(ChatReply { text: reply });
+        }
+    }
+
+    // JARVIS Sentinel Tool Direct Integration
+    if q_lower.contains("audit keamanan") || q_lower.contains("cek keamanan") || q_lower.contains("security audit") {
+        let report = crate::sentinel::audit_pc_security();
+        let reply = report.summary_markdown;
+        chat.push(Turn {
+            role: "assistant",
+            text: reply.clone(),
+            attachments: Vec::new(),
+        });
+        return Ok(ChatReply { text: reply });
+    }
+
+    if q_lower.contains("siapa saja di wifi") || q_lower.contains("scan wifi") || q_lower.contains("pindai jaringan") || q_lower.contains("scan lan") {
+        let scan = crate::sentinel::scan_local_network();
+        let mut reply = format!("### Hasil Pemindaian Jaringan Lokal (LAN)\n{}\n\n", scan.summary_text);
+        for d in &scan.devices {
+            reply.push_str(&format!("• `{}` ({}) — {}\n", d.ip_address, d.mac_address, d.device_type_guess));
+        }
+        chat.push(Turn {
+            role: "assistant",
+            text: reply.clone(),
+            attachments: Vec::new(),
+        });
+        return Ok(ChatReply { text: reply });
+    }
+
+    let memory_context = crate::memory::format_for_system_prompt();
+    let full_system_prompt = format!("{SYSTEM_PROMPT}{memory_context}");
+
     let answer = match providers::complete(
         provider,
         key.as_deref(),
         model,
         local_endpoint,
-        SYSTEM_PROMPT,
+        &full_system_prompt,
         &chat.snapshot(),
     )
     .await

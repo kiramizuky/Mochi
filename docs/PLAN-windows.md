@@ -14,14 +14,14 @@ paritas fitur macOS secara bertahap.
 | 2 — Test dan CI Windows | Selesai kecuali run CI pertama | 37 test TypeScript + 68 test Rust lulus. Smoke test aplikasi (9 pemeriksaan: island, geometri panel/wake strip + always-on-top, IPC frontend, Settings, frontend Settings + kartu Welcome, tray, relay, file drop Unicode) berjalan lokal pada build debug dan release. Workflow `.github/workflows/windows.yml` menjalankan seluruh test, smoke aplikasi, dan mengunggah installer + SHA-256. UAT instalasi otomatis tersedia dan lulus lokal. Belum: run pertama di GitHub Actions dan verifikasi pada mesin Windows 10/11 bersih. |
 | 3 — Signing dan distribusi | Sebagian | Pipeline signing selesai dan tervalidasi dengan sertifikat self-signed sementara (PFX + thumbprint + timestamp RFC 3161), termasuk verifikasi `signtool /pa /all`. Urutan rilis kini benar: build tanpa bundle, signing binary, bundling dengan `--no-binary-patching`, signing installer, lalu menandatangani ulang installer final untuk updater dan menulis `latest.json`. Belum: sertifikat Authenticode nyata, secret `WINDOWS_SIGNING_PFX_BASE64`/`WINDOWS_SIGNING_PFX_PASSWORD` serta `TAURI_SIGNING_PRIVATE_KEY`/`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, artefak signed dari CI, publikasi GitHub Release, dan UAT Windows 10/11 tanpa toolchain. Installer lokal tetap unsigned. |
 | 4 — Paritas fitur inti | Selesai secara lokal | 4.1 selesai: registry Anthropic/OpenAI/Gemini/Groq/lokal, key per provider di Credential Manager, model selector dinamis dengan fallback statis, dan endpoint lokal tervalidasi. 4.2 selesai: status kesehatan integrasi di Settings, log disanitasi dengan rotasi 1 MB, ekspor log aman, dan crash report lokal yang disanitasi (tanpa upload). 4.4 selesai: kartu onboarding pertama kali serta pemilihan editor/terminal dengan deteksi otomatis dan peluncur tervalidasi. 4.3 selesai untuk infrastruktur: `tauri-plugin-updater`, manifest GitHub Releases bertanda tangan minisign, cek manual dan otomatis di Settings, progress instalasi, serta feed lokal khusus debug. Kanal stabil tetap ditahan sampai Authenticode dan UAT tersedia. |
-| 5 — Fitur lanjutan/otonom | Fondasi 5.0 Selesai | RFC 5.0 (`0001`) selesai diimplementasikan: gate policy default-deny (`policy.rs`, `gate.rs`), normalisasi scope Windows, consent timeout 30s (`consent.rs`), audit trail lokal berantai HMAC-SHA-256 (`audit.rs`), hard stop kill switch persisten (`killswitch.rs`), seksi Security & Policy di Settings, serta item "Stop all automation" di tray. 74 test Rust lulus. |
+| 5 — Fitur lanjutan/otonom | Fondasi 5.0 + Sentinel & Memory Selesai | RFC 5.0 (`0001`) selesai diimplementasikan: gate policy default-deny (`policy.rs`, `gate.rs`), normalisasi scope Windows, consent timeout 30s (`consent.rs`), audit trail lokal berantai HMAC-SHA-256 (`audit.rs`), hard stop kill switch persisten (`killswitch.rs`). Ditambahkan Paket 5 Network Sentinel & Security Audit (`sentinel.rs`), serta JARVIS Long-Term Memory (`memory.rs`). 82 test Rust lulus. |
 
 Perintah verifikasi cepat dari `windows/`:
 
 ```powershell
 npm ci
 npm run verify            # versi, typecheck, 37 test TS, 28 WAV
-cargo test --workspace    # 78 test Rust (74 lib + 3 hook + 1 cek signature rilis)
+cargo test --workspace    # 82 test Rust (78 lib + 3 hook + 1 cek signature rilis)
 npm run build             # typecheck + bundle front end + hook release
 npm run smoke:hook        # relay aman saat Mochi ditutup
 npm run smoke:app         # 9 pemeriksaan runtime pada build release
@@ -337,8 +337,10 @@ Untuk setiap fitur, definisikan:
 | Audio | Ada (28 WAV CC0) | Pertahankan validasi build dan smoke test. |
 | Auto-update | Ada (beta; manifest GitHub + minisign, cek/consent manual) | Kanal stabil setelah Authenticode, kunci produksi, dan UAT. |
 | Policy/audit/consent/kill switch | Ada (Fondasi 5.0 selesai) | Siap menjadi gerbang otorisasi untuk konsumen Phase 5 berikutnya (MCP, watcher, dll.). |
+| Network Sentinel & Security Audit | Ada (Paket 5 Blueprint) | Audit Windows Defender, Firewall, BitLocker, UAC, port listening, LAN discovery, dan diagnostik latensi/DNS. |
+| Memory (JARVIS Long-Term Memory) | Ada (Phase 5) | Penyimpanan fakta pengguna terdesentralisasi di `%APPDATA%\Mochi\memory.json`, disuntikkan ke AI prompt. |
 | Voice | Belum ada | RFC dan implementasi lintas API Windows. |
-| MCP, memory, autonomous | Belum ada | Port bertahap setelah policy/audit tersedia. |
+| MCP, autonomous tools | Belum ada | Port bertahap setelah policy/audit tersedia. |
 | Screen/app automation | Belum ada | Implementasi terakhir, dengan consent dan kill switch. |
 
 ## Checklist UAT rilis
