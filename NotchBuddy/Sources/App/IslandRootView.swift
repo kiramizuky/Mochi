@@ -107,7 +107,17 @@ struct IslandContainer: View {
 
             Group {
                 if state.mode == .compact {
-                    if state.isMediaPlaying {
+                    if let pin = state.telegramPairingPIN, !pin.isEmpty {
+                        NotchCompactTelegramPill(pin: pin)
+                            .position(x: islandWidth - 55, y: islandHeight / 2)
+                            .transition(.opacity)
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) {
+                                    state.view = .telegramPairing
+                                    state.mode = .expanded
+                                }
+                            }
+                    } else if state.isMediaPlaying {
                         NotchCompactMediaPill()
                             .position(x: islandWidth - 45, y: islandHeight / 2)
                             .transition(.opacity)
@@ -629,6 +639,31 @@ struct NotchCompactMediaPill: View {
         .padding(.vertical, 3)
         .background(Color.white.opacity(0.1))
         .clipShape(Capsule())
+    }
+}
+
+// MARK: - Notch Compact Telegram Pill (Resting Pill with 6-Digit PIN)
+
+struct NotchCompactTelegramPill: View {
+    let pin: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "paperplane.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(Color(red: 0.1, green: 0.65, blue: 0.95))
+            Text("PIN: \(pin)")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.blue.opacity(0.35))
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color(red: 0.1, green: 0.65, blue: 0.95).opacity(0.6), lineWidth: 0.8)
+        )
     }
 }
 

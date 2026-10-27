@@ -26,6 +26,7 @@ struct IslandViewContent: View {
         case .settings:  SettingsIslandView(state: state)
         case .greeting:  EmptyView()  // GreetingCanvasView overlaid in IslandRootView
         case .media:     NotchMediaStudioView(state: state)
+        case .telegramPairing: TelegramPairingView(state: state)
         }
     }
 }
@@ -250,6 +251,104 @@ struct QuestionView: View {
             .padding(.leading, 116)
             .padding(.trailing, 16)
             .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+// MARK: - Telegram Mobile Pairing View
+
+struct TelegramPairingView: View {
+    @ObservedObject var state: AppState
+    @State private var copied: Bool = false
+
+    var pin: String {
+        state.telegramPairingPIN ?? "------"
+    }
+
+    var senderName: String {
+        state.telegramPairingChatName ?? "Smartphone"
+    }
+
+    var body: some View {
+        ZStack {
+            CardBackground(wash: .cyan) // Telegram blue/cyan wash
+
+            VStack(alignment: .leading, spacing: 8) {
+                // Header Row
+                HStack(spacing: 8) {
+                    Image(systemName: "paperplane.fill")
+                        .foregroundColor(Color(red: 0.1, green: 0.65, blue: 0.95))
+                        .font(.system(size: 14, weight: .bold))
+                    Text("Otentikasi Telegram Gateway")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text("Koneksi Baru")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.2))
+                        .cornerRadius(4)
+                }
+
+                // PIN Display: 6 Digits Monospace Box
+                HStack(spacing: 6) {
+                    let chars = Array(pin.prefix(6))
+                    ForEach(0..<6, id: \.self) { idx in
+                        let charStr = idx < chars.count ? String(chars[idx]) : "-"
+                        Text(charStr)
+                            .font(.system(size: 22, weight: .heavy, design: .monospaced))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 42)
+                            .background(Color.black.opacity(0.65))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color(red: 0.1, green: 0.65, blue: 0.95).opacity(0.8), lineWidth: 1.2)
+                            )
+                        if idx == 2 {
+                            Spacer().frame(width: 6)
+                        }
+                    }
+
+                    Spacer()
+
+                    // Action buttons
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(pin, forType: .string)
+                        copied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                            Text(copied ? "Tersalin" : "Salin")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.top, 2)
+
+                // Subtitle / Guide
+                HStack {
+                    Text("Ketikkan 6 digit PIN di atas ke chat bot Telegram HP (\(senderName))")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("Tolak / Batal") {
+                        TelegramGatewayService.shared.cancelPendingPairing()
+                    }
+                    .font(.system(size: 10))
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                }
+            }
+            .padding(.leading, 116)
+            .padding(.trailing, 16)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

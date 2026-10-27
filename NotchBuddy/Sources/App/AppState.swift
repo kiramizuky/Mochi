@@ -548,6 +548,11 @@ final class AppState: ObservableObject {
     @Published var stateOverride: BotState? = nil
     @Published var activePlaybookProgress: String? = nil
 
+    // Telegram Mobile Gateway Pairing State
+    @Published var telegramPairingPIN: String? = nil
+    @Published var telegramPairingChatName: String? = nil
+    @Published var telegramPairingExpiration: Date? = nil
+
     // Real notch dimensions (set by IslandWindowController on launch)
     var notchWidth:  CGFloat = IslandConst.notchWidth
     var notchHeight: CGFloat = IslandConst.notchHeight

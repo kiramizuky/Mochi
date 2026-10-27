@@ -29,6 +29,20 @@
 
 ### macOS
 
+- **Perbaikan Visualisasi Pairing Telegram Mobile Gateway di Notch Island**:
+  - 🔑 **Kartu Dialog Otentikasi Telegram (`IslandView.telegramPairing`, `TelegramPairingView`)**:
+    - Memperbaiki masalah di mana perintah `/start` dari smartphone tidak memunculkan kartu 6-digit PIN di Notch Island.
+    - Menghadirkan tampilan kartu khusus di Notch Island (tinggi 185px) beraksen biru Telegram (`#0088CC` / `.cyan`) saat ada permintaan koneksi dari smartphone baru.
+    - Tampilan kode PIN 6-digit besar berformat monospace monokrom kontras tinggi: masing-masing karakter ditempatkan di dalam kotak individual berborder tebal dengan spasi tengah pemisah 3-3.
+    - Dilengkapi tombol 1-klik **Salin PIN** ke clipboard dan tombol **Batal / Tutup**.
+  - ✈️ **Notch Compact Resting Pill (`NotchCompactTelegramPill`)**:
+    - Ketika ada proses pairing yang sedang menunggu verifikasi, mode compact/resting Notch Island menampilkan pill biru interaktif `✈️ PIN: [6-digit]` di sebelah kanan notch, sehingga pengguna tetap dapat melihat kode PIN secara instan tanpa harus membuka mode expanded.
+    - Mengetuk atau mengklik pill ini langsung memperluas (*expand*) Notch Island ke kartu otentikasi penuh.
+  - 🔄 **Otomatisasi FSM & Sinkronisasi Lifecycle (`TelegramGatewayService.swift`)**:
+    - Mengintegrasikan sinyal `.hookExpand` yang secara otomatis membuka Notch Island dari keadaan tersembunyi/compact ke kartu `.telegramPairing` begitu pesan `/start` masuk.
+    - Saat verifikasi PIN berhasil di Telegram, Notch Island secara otomatis menampilkan status sukses `✅ Telegram HP Terhubung`, membunyikan nada selesai, dan kembali ke mode normal secara anggun.
+
+
 - **Dynamic Island Media Studio & Multi-Format Player (Paket 14 - Selesai Penuh: Tahap A, B, C, D)**:
   - 🎵 **Dynamic Media Pill (Resting / Compact Mode) (`IslandRootView.swift`, `AudioWaveformEngine.swift`)**:
     - Notch Island melakukan *fluid morphing* saat media audio/video berputar di latar belakang, memanjang secara anggun ke lebar 248px.

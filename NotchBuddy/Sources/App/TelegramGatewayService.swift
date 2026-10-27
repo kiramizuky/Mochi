@@ -53,7 +53,39 @@ public final class TelegramGatewayService: @unchecked Sendable {
 
     public func unlinkPairing() {
         allowedChatId = nil
+        cancelPendingPairing()
         appendAppLog("nb.log", "TelegramGateway: Pairing direset oleh pengguna.")
+    }
+
+    /// Membatalkan proses pairing yang sedang berlangsung dan menutup kartu di Notch
+    public func cancelPendingPairing() {
+        lock.withLock {
+            pendingPairingPin = nil
+            pendingPairingExpiration = nil
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                AppState.shared.telegramPairingPIN = nil
+                AppState.shared.telegramPairingChatName = nil
+                AppState.shared.telegramPairingExpiration = nil
+                AppState.shared.stateOverride = nil
+                if AppState.shared.view == .telegramPairing {
+                    AppState.shared.view = .overview
+                    AppState.shared.mode = .compact
+                }
+            }
+        } else {
+            Task { @MainActor in
+                AppState.shared.telegramPairingPIN = nil
+                AppState.shared.telegramPairingChatName = nil
+                AppState.shared.telegramPairingExpiration = nil
+                AppState.shared.stateOverride = nil
+                if AppState.shared.view == .telegramPairing {
+                    AppState.shared.view = .overview
+                    AppState.shared.mode = .compact
+                }
+            }
+        }
     }
 
     // MARK: - Lifecycle Management
@@ -166,9 +198,20 @@ public final class TelegramGatewayService: @unchecked Sendable {
             }
 
             await MainActor.run {
+                AppState.shared.telegramPairingPIN = nil
+                AppState.shared.telegramPairingChatName = nil
+                AppState.shared.telegramPairingExpiration = nil
                 AppState.shared.activePlaybookProgress = "✅ Telegram HP Terhubung (\(senderName))"
+                AppState.shared.stateOverride = nil
                 NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.proud)
                 SoundEngine.shared.play("finish")
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    if AppState.shared.view == .telegramPairing {
+                        AppState.shared.view = .overview
+                        AppState.shared.mode = .compact
+                    }
+                }
             }
 
             appendAppLog("nb.log", "TelegramGateway: Pairing handshake berhasil untuk chat ID \(chatId)")
@@ -196,8 +239,14 @@ public final class TelegramGatewayService: @unchecked Sendable {
 
         // Tampilkan PIN di Notch MacBook pengguna secara visual
         await MainActor.run {
+            AppState.shared.telegramPairingPIN = pin
+            AppState.shared.telegramPairingChatName = senderName
+            AppState.shared.telegramPairingExpiration = Date().addingTimeInterval(300)
             AppState.shared.activePlaybookProgress = "🔑 Telegram PIN: \(pin)"
             AppState.shared.stateOverride = .question
+
+            // Buka Notch Island secara visual ke kartu Telegram Pairing
+            NotificationCenter.default.post(name: .hookExpand, object: IslandView.telegramPairing)
             NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
             SoundEngine.shared.play("think")
         }
