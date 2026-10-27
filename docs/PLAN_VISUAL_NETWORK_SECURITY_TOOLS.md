@@ -150,14 +150,78 @@ Meningkatkan ketahanan sistem alat (*tool calling*) agar asisten tidak pernah ga
 
 ## 6. Rencana Pembagian Paket Kerja (Roadmap)
 
-| Paket | Nama Paket | Fokus & Implementasi | Output Utama |
-| :---: | :--- | :--- | :--- |
-| **Paket 5** | **Security Audit & Network Sentinel** | Pembuatan tool `laptop_security_audit`, `network_scan_lan`, `network_diagnostics`, dan resolver query keamanan. | Pengguna bisa bertanya *"cek keamanan laptop"* dan *"cek siapa saja di wifi"* dengan output visual rapi di Canvas / Notch. |
-| **Paket 6** | **Webcam Visual Perception** | Pembuatan `WebcamCaptureService` via AVFoundation + tool `camera_capture_and_analyze` dengan kontrol privasi. | Mochi dapat melihat objek fisik di depan MacBook dan menganalisisnya menggunakan Vision VLM. |
-| **Paket 7** | **On-Device Face Recognition** | Pembuatan `FaceRecognitionService` (Apple Vision framework) + registrasi wajah pemilik di Settings. | Mochi mengenali wajah pemilik, menyapa saat datang, dan memberi peringatan jika ada pengintip layar. |
-| **Paket 8** | **CCTV RTSP & IoT Streamer** | Pembuatan `CCTVGatewayService` untuk RTSP/ONVIF + integrasi monitoring CCTV rumah/kantor. | Mochi dapat memantau CCTV IP kamera secara berkala atau sesuai perintah jarak jauh via Telegram. |
+| Paket | Nama Paket | Fokus & Implementasi | Output Utama | Status |
+| :---: | :--- | :--- | :--- | :---: |
+| **Paket 5** | **Security Audit & Network Sentinel** | Pembuatan tool `laptop_security_audit`, `network_scan_lan`, `network_diagnostics`, dan resolver query keamanan. | Pengguna bisa bertanya *"cek keamanan laptop"* dan *"cek siapa saja di wifi"* dengan output visual rapi di Canvas / Notch. | **Selesai (100%)** ✅ |
+| **Paket 6** | **Webcam Visual Perception** | Pembuatan `WebcamCaptureService` via AVFoundation + tool `camera_capture_photo` & `camera_analyze` dengan kontrol privasi. | Mochi dapat melihat objek fisik di depan MacBook dan menganalisisnya menggunakan Vision VLM. | **Selesai (100%)** ✅ |
+| **Paket 7** | **On-Device Face Recognition** | Pembuatan `FaceRecognitionService` (Apple Vision framework) + registrasi wajah pemilik di Settings. | Mochi mengenali wajah pemilik, menyapa saat datang, dan memberi peringatan jika ada pengintip layar. | **Selesai (100%)** ✅ |
+| **Paket 8** | **CCTV RTSP & IoT Streamer** | Pembuatan `CCTVGatewayService` untuk RTSP/ONVIF + integrasi monitoring CCTV rumah/kantor. | Mochi dapat memantau CCTV IP kamera secara berkala atau sesuai perintah jarak jauh via Telegram. | **Selesai (100%)** ✅ |
+| **Paket 9** | **Tool Calling Robustness & Self-Healing** | Sanitasi skema Gemini OpenAPI (`sanitizeSchemaForGemini`), aliasing sinonim fuzzy di `ToolExecutor`. | Panggilan alat zero-breakage, menangani sinonim natural tanpa error "Unknown tool". | **Selesai (100%)** ✅ |
+
+---
+
+## 7. Analisis Akar Masalah (RCA) & Perbaikan Tampilan Chat Terpotong
+
+### 7.1. Gejala Permasalahan
+Saat percakapan dalam mode chat di pulau Notch sudah banyak (riwayat pesan panjang):
+- Tampilan gelembung chat bagian bawah terpotong.
+- Baris kolom pengetikan (`TextField`), tombol mikrofon, dan tombol kirim menghilang atau terpotong oleh sistem jendela macOS.
+- Klik mouse di area bawah pulau lolos ke jendela aplikasi di latar belakang.
+
+### 7.2. Akar Masalah (Root Cause)
+1. **Batas Jendela Panel Statis (`panelH`)**:
+   Pada `IslandWindowController.swift`, jendela melayang `IslandPanel` (`NSPanel`) diinisialisasi dengan ukuran tetap `panelW = 720`, **`panelH = 320 pt`**.
+2. **Ketinggian Chat Adaptif Melampaui Batas Panel**:
+   Pada `IslandRootView.swift` dan `IslandPanel.currentIslandFrame`, ketinggian pulau chat dihitung secara dinamis:
+   $$\text{h} = \min(420, 240 + \text{chatHistory.count} \times 45)$$
+   Saat terdapat 3–4 pesan, tinggi pulau mencapai $375 - 420\text{ pt}$.
+   Karena koordinat pulau dihitung dari atas jendela:
+   $$\text{origin.y} = \text{panel.height} - \text{h} = 320 - 420 = -100\text{ pt}$$
+   Koordinat $y$ bernilai negatif, menyebabkan **100 pt area terbawah dari pulau Notch terpotong (clipped) di luar jendela NSPanel oleh WindowServer macOS**.
+3. **Penyusutan Ruang Input**:
+   `ScrollView` di `PromptView` menggunakan `maxHeight: .infinity` tanpa prioritas proteksi, sehingga saat daftar pesan memanjang, baris input tertekan ke batas terbawah.
+
+### 7.3. Solusi yang Diterapkan
+1. **Peningkatan Tinggi Jendela Panel ke 520 pt**:
+   Nilai `panelH` di `IslandWindowController.swift` ditingkatkan menjadi **520 pt**. Area transparan di luar bentuk pulau Notch tetap memiliki sifat `ignoresMouseEvents = true`, sehingga klik pengguna pada aplikasi di belakangnya tidak terganggu.
+2. **Ketinggian Maksimal Chat Diperluas hingga 480 pt**:
+   Rumus adaptif diperbarui menjadi $\min(480, 240 + \text{count} \times 50)$, memberikan ruang vertikal luas untuk membaca percakapan panjang.
+3. **Prioritas Tata Letak Kolom Input (`.layoutPriority(1)`)**:
+   Baris input teks di `PromptView` diberikan `.layoutPriority(1)`, menjamin sistem tata letak SwiftUI selalu mengalokasikan ruang penuh untuk pengetikan terlebih dahulu sebelum membagi ruang ke `ScrollView`.
+
+---
+
+## 8. Alur & Lokasi Penampilan Hasil Tangkapan Gambar
+
+Hasil pemotretan webcam, analisis visual, dan pemantauan CCTV didistribusikan ke 4 saluran terintegrasi:
+
+```mermaid
+flowchart TD
+    Capture["Pengambilan Gambar (Webcam / CCTV)"] --> Storage["Penyimpanan Fisik Lokal (/tmp)"]
+    
+    Capture --> Canvas["Canvas Studio (Jendela Samping)"]
+    Capture --> Island["Notch Island (Chat & Pill Button)"]
+    Capture --> Telegram["Telegram Gateway (Ponsel Pengguna)"]
+
+    Canvas --> CanvasDetail["Pratinjau Foto Resolusi Tinggi + Metadata Wajah/Objek"]
+    Island --> IslandPill["Tombol Pil: [ Buka Canvas: Foto Webcam > ]"]
+    Island --> IslandText["Deskripsi Teks VLM di Gelembung Chat"]
+    Telegram --> TGPhoto["Pesan Foto Langsung ke Smartphone (sendPhoto)"]
+```
+
+1. **Penyimpanan Berkas Fisik Mac**:
+   - Foto webcam: `/tmp/mochi_webcam_<timestamp>.jpg`
+   - Snapshot CCTV: `/tmp/cctv_<id>_<timestamp>.jpg`
+2. **Jendela Interaktif Canvas (Canvas Studio)**:
+   - Setiap pengambilan gambar secara otomatis membuat `CanvasArtifact` bertipe `.document`.
+   - Di pulau Notch langsung muncul tombol pil interaktif: `[ Buka Canvas: Foto Webcam (...) > ]`.
+   - Mengklik tombol membuka jendela Canvas yang menampilkan gambar secara utuh, waktu pengambilan, jumlah wajah terdeteksi, dan konteks objek di sekitarnya.
+3. **Gelembung Percakapan Notch (Inline VLM Summary)**:
+   - Deskripsi visual kecerdasan buatan langsung tersaji di gelembung obrolan untuk menjawab pertanyaan pengguna (misal: *"Di depan layar terlihat Anda sedang memegang dokumen faktur"*).
+4. **Telegram Mobile Gateway**:
+   - Jika pengguna meminta tangkapan gambar dari smartphone via Telegram (misal: `/screenshot` atau perintah cek CCTV), berkas foto langsung dikirimkan ke ruang obrolan Telegram pengguna.
 
 ---
 
 > [!NOTE]
-> Perbaikan bug skema Gemini (`missing field items`) telah berhasil diterapkan dan lolos uji kompilasi serta regresi test 100%.
+> Seluruh perbaikan layout chat, integrasi Canvas gambar, serta pengujian regresi telah berhasil diverifikasi dengan tingkat kelulusan 100%.

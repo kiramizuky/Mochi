@@ -843,6 +843,7 @@ struct PromptView: View {
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(Color.white.opacity(0.07))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                .layoutPriority(1)
                 .simultaneousGesture(TapGesture().onEnded { focused = true })
             }
             .padding(.leading, 84)

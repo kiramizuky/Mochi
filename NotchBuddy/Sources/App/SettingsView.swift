@@ -119,6 +119,18 @@ struct SettingsView: View {
     @State private var newToolScript: String = ""
     @State private var newToolParams: String = ""
 
+    // Docker & Remote Server SSH Gateway
+    @State private var isDockerAvailable: Bool = false
+    @State private var dockerContainersCount: Int = 0
+    @State private var isCheckingDocker: Bool = false
+    @State private var remoteServersList: [RemoteServerConfig] = SSHServerGatewayService.shared.listServers()
+    @State private var newServerName: String = ""
+    @State private var newServerHost: String = ""
+    @State private var newServerPort: String = "22"
+    @State private var newServerUsername: String = "ubuntu"
+    @State private var newServerKeyPath: String = "~/.ssh/id_rsa"
+    @State private var isAuditingServer: Bool = false
+
     // Mobile & Telegram
     @State private var telegramToken: String = KeychainStore.shared.get("telegram-bot-token")
         ?? UserDefaults.standard.string(forKey: "telegramBotToken") ?? ""
@@ -218,6 +230,16 @@ struct SettingsView: View {
             refreshDynamicTools()
             telegramRunning = TelegramGatewayService.shared.isRunning
             telegramAllowedChatId = TelegramGatewayService.shared.allowedChatId
+
+            Task {
+                let avail = await DockerIntegrationService.shared.isDockerAvailable()
+                let result = await DockerIntegrationService.shared.listContainers(all: false)
+                await MainActor.run {
+                    isDockerAvailable = avail
+                    dockerContainersCount = result.containers.count
+                    remoteServersList = SSHServerGatewayService.shared.listServers()
+                }
+            }
 
             guard fetchedModels.isEmpty,
                   let key = KeychainStore.shared.get("\(selectedProviderId)-api-key"), !key.isEmpty else { return }
@@ -2028,6 +2050,160 @@ struct SettingsView: View {
                         .buttonStyle(.bordered)
                         .disabled(mcpNewCommand.isEmpty)
                     }
+                }
+                .padding(6)
+            }
+
+            // Docker & Container Engine
+            GroupBox("Docker & Container Engine") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: isDockerAvailable ? "shippingbox.fill" : "shippingbox")
+                            .foregroundColor(isDockerAvailable ? .blue : .secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Docker Daemon:")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(isDockerAvailable ? "Aktif & Tersedia (\(dockerContainersCount) container berjalan)" : "Tidak terdeteksi atau daemon belum aktif")
+                                .font(.system(size: 10))
+                                .foregroundColor(isDockerAvailable ? .green : .secondary)
+                        }
+                        Spacer()
+                        Button(isCheckingDocker ? "Memeriksa..." : "Refresh Status") {
+                            isCheckingDocker = true
+                            Task {
+                                let avail = await DockerIntegrationService.shared.isDockerAvailable()
+                                let res = await DockerIntegrationService.shared.listContainers(all: true)
+                                await MainActor.run {
+                                    isDockerAvailable = avail
+                                    dockerContainersCount = res.containers.filter { $0.status.lowercased().hasPrefix("up") }.count
+                                    isCheckingDocker = false
+                                    statusMessage = avail ? "Docker terdeteksi (\(res.containers.count) container)." : "Docker binary tidak ditemukan."
+                                }
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isCheckingDocker)
+
+                        Button("Lihat di Canvas") {
+                            Task {
+                                _ = await DockerIntegrationService.shared.listContainers(all: true)
+                                await MainActor.run {
+                                    if let art = CanvasManager.shared.currentArtifact {
+                                        CanvasManager.shared.present(artifact: art)
+                                    }
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(!isDockerAvailable)
+                    }
+                }
+                .padding(6)
+            }
+
+            // Remote Server SSH Gateway
+            GroupBox("Remote Server SSH Gateway") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Kelola server Linux / Cloud jarak jauh. Mochi dapat mengaudit performa, beban server, dan membaca log.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+
+                    if remoteServersList.isEmpty {
+                        Text("Belum ada remote server yang didaftarkan.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 2)
+                    } else {
+                        ForEach(remoteServersList) { srv in
+                            HStack(spacing: 8) {
+                                Image(systemName: "server.rack")
+                                    .foregroundColor(.purple)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("\(srv.name)")
+                                        .font(.system(size: 11, weight: .semibold))
+                                    Text("\(srv.username)@\(srv.host):\(srv.port) (Key: \(srv.keyPath))")
+                                        .font(.system(size: 9.5))
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Button("Audit") {
+                                    isAuditingServer = true
+                                    Task {
+                                        let (_, summary) = await SSHServerGatewayService.shared.checkServerHealth(identifier: srv.id)
+                                        await MainActor.run {
+                                            isAuditingServer = false
+                                            statusMessage = "Audit \(srv.name) selesai: \(summary.prefix(30))..."
+                                            if let art = CanvasManager.shared.currentArtifact {
+                                                CanvasManager.shared.present(artifact: art)
+                                            }
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+
+                                Button("Hapus") {
+                                    SSHServerGatewayService.shared.removeServer(id: srv.id)
+                                    remoteServersList = SSHServerGatewayService.shared.listServers()
+                                    statusMessage = "Server \(srv.name) dihapus."
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                            Divider()
+                        }
+                    }
+
+                    // Tambah Server Form
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Daftarkan Server Baru:")
+                            .font(.system(size: 10.5, weight: .medium))
+                        HStack(spacing: 6) {
+                            TextField("Label (Prod Web)", text: $newServerName)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 10.5))
+                            TextField("Host / IP", text: $newServerHost)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 10.5))
+                            TextField("Port", text: $newServerPort)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 10.5))
+                                .frame(width: 50)
+                        }
+                        HStack(spacing: 6) {
+                            TextField("User (ubuntu)", text: $newServerUsername)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 10.5))
+                                .frame(width: 100)
+                            TextField("Key Path (~/.ssh/id_rsa)", text: $newServerKeyPath)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 10.5))
+                            Button("Daftarkan") {
+                                let portInt = Int(newServerPort.trimmingCharacters(in: .whitespaces)) ?? 22
+                                let srv = RemoteServerConfig(
+                                    id: UUID().uuidString,
+                                    name: newServerName.trimmingCharacters(in: .whitespaces),
+                                    host: newServerHost.trimmingCharacters(in: .whitespaces),
+                                    port: portInt,
+                                    username: newServerUsername.trimmingCharacters(in: .whitespaces),
+                                    keyPath: newServerKeyPath.trimmingCharacters(in: .whitespaces)
+                                )
+                                SSHServerGatewayService.shared.addOrUpdateServer(srv)
+                                remoteServersList = SSHServerGatewayService.shared.listServers()
+                                newServerName = ""
+                                newServerHost = ""
+                                statusMessage = "Server \(srv.name) berhasil didaftarkan."
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .disabled(newServerName.isEmpty || newServerHost.isEmpty)
+                        }
+                    }
+                    .padding(6)
+                    .background(Color.secondary.opacity(0.06))
+                    .cornerRadius(6)
                 }
                 .padding(6)
             }

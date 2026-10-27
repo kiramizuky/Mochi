@@ -57,7 +57,7 @@ final class IslandWindowController: NSWindowController {
         let nH = geometry.height
 
         let panelW: CGFloat = 720
-        let panelH: CGFloat = 320
+        let panelH: CGFloat = 520
         let sf = screen.frame
         let panel = IslandPanel(
             contentRect: NSRect(x: sf.midX - panelW/2, y: sf.maxY - panelH,
@@ -869,7 +869,7 @@ final class IslandWindowController: NSWindowController {
 
     private func isBotHit(_ windowPoint: CGPoint) -> Bool {
         let s = AppState.shared
-        let panelH = window?.frame.height ?? 320
+        let panelH = window?.frame.height ?? 520
         let panelW = window?.frame.width  ?? 720
         let (islandW, fixedH) = islandSize(mode: s.mode, view: s.view,
                                             progress: s.uploadProgress, nw: notchW, nh: notchH)
@@ -877,8 +877,8 @@ final class IslandWindowController: NSWindowController {
         let islandH: CGFloat
         if s.mode == .expanded && s.view == .prompt {
             let base: CGFloat = 240
-            let perMsg: CGFloat = 45
-            islandH = min(420, base + CGFloat(s.chatHistory.count) * perMsg)
+            let perMsg: CGFloat = 50
+            islandH = min(480, base + CGFloat(s.chatHistory.count) * perMsg)
         } else {
             islandH = fixedH
         }
@@ -942,8 +942,8 @@ final class IslandPanel: NSPanel {
         let h: CGFloat
         if s.mode == .expanded && s.view == .prompt {
             let base: CGFloat = 240
-            let perMsg: CGFloat = 45
-            h = min(420, base + CGFloat(s.chatHistory.count) * perMsg)
+            let perMsg: CGFloat = 50
+            h = min(480, base + CGFloat(s.chatHistory.count) * perMsg)
         } else {
             h = fixedH
         }
