@@ -100,6 +100,8 @@ struct SettingsView: View {
 
     // Visual Perception, Face & CCTV
     @State private var isEnrollingFace: Bool = false
+    @State private var isTestingWebcamPhoto: Bool = false
+    @State private var isTestingWebcamVideo: Bool = false
     @State private var faceEnrollmentStatus: Bool = FaceRecognitionService.shared.isOwnerEnrolled
     @State private var cctvCamerasList: [CCTVCameraConfig] = CCTVGatewayService.shared.listCameras()
     @State private var newCCTVName: String = ""
@@ -1222,10 +1224,10 @@ struct SettingsView: View {
 
             // Visual Perception & Face Recognition
             GroupBox("Persepsi Visual & Biometrik Wajah (Apple Neural Engine)") {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: faceEnrollmentStatus ? "faceid" : "person.crop.circle.badge.exclamationmark")
-                            .font(.system(size: 16))
+                            .font(.system(size: 18))
                             .foregroundColor(faceEnrollmentStatus ? .green : .orange)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(faceEnrollmentStatus ? "Wajah Pemilik Terdaftar ✓" : "Wajah Pemilik Belum Terdaftar")
@@ -1238,19 +1240,44 @@ struct SettingsView: View {
                         }
                         Spacer()
                         if faceEnrollmentStatus {
-                            Button("Reset Wajah") {
-                                FaceRecognitionService.shared.resetOwnerFace()
-                                faceEnrollmentStatus = false
-                                statusMessage = "Data wajah berhasil dihapus."
+                            HStack(spacing: 6) {
+                                Button("Verifikasi") {
+                                    Task {
+                                        do {
+                                            statusMessage = "Mengambil foto untuk verifikasi..."
+                                            let capture = try await WebcamCaptureService.shared.capturePhoto()
+                                            let verify = try await FaceRecognitionService.shared.verifyFace(in: capture.data)
+                                            await MainActor.run {
+                                                statusMessage = verify.message
+                                            }
+                                        } catch {
+                                            await MainActor.run {
+                                                statusMessage = "Gagal verifikasi: \(error.localizedDescription)"
+                                            }
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+
+                                Button("Reset Wajah") {
+                                    FaceRecognitionService.shared.resetOwnerFace()
+                                    faceEnrollmentStatus = false
+                                    statusMessage = "Data biometrik wajah berhasil dihapus."
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                             }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
                         } else {
-                            Button(isEnrollingFace ? "Mengambil Foto..." : "Daftarkan Wajah") {
+                            Button(isEnrollingFace ? "Menganalisis Kamera..." : "Daftarkan Wajah") {
                                 isEnrollingFace = true
+                                statusMessage = "Mengaktifkan kamera FaceTime HD MacBook..."
                                 Task {
                                     do {
                                         let capture = try await WebcamCaptureService.shared.capturePhoto()
+                                        await MainActor.run {
+                                            statusMessage = "Menganalisis biometrik wajah dengan Vision..."
+                                        }
                                         let enroll = try await FaceRecognitionService.shared.enrollOwnerFace(imageData: capture.data)
                                         await MainActor.run {
                                             isEnrollingFace = false
@@ -1260,7 +1287,7 @@ struct SettingsView: View {
                                     } catch {
                                         await MainActor.run {
                                             isEnrollingFace = false
-                                            statusMessage = "Gagal: \(error.localizedDescription)"
+                                            statusMessage = "Gagal mendaftarkan wajah: \(error.localizedDescription)"
                                         }
                                     }
                                 }
@@ -1268,6 +1295,73 @@ struct SettingsView: View {
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
                             .disabled(isEnrollingFace)
+                        }
+                    }
+
+                    Divider()
+
+                    // Uji Langsung Webcam & Perekam Video
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Uji Langsung Kamera & Perekam Video")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                isTestingWebcamPhoto = true
+                                statusMessage = "Mengambil foto webcam..."
+                                Task {
+                                    do {
+                                        let capture = try await WebcamCaptureService.shared.capturePhoto()
+                                        await MainActor.run {
+                                            isTestingWebcamPhoto = false
+                                            statusMessage = "Foto berhasil diambil (\(capture.width)x\(capture.height) px, \(capture.detectedFacesCount) wajah). Dibuka di Canvas."
+                                        }
+                                    } catch {
+                                        await MainActor.run {
+                                            isTestingWebcamPhoto = false
+                                            statusMessage = "Gagal mengambil foto: \(error.localizedDescription)"
+                                        }
+                                    }
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "camera.fill")
+                                    Text(isTestingWebcamPhoto ? "Mengambil Foto..." : "Ambil Foto Webcam")
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(isTestingWebcamPhoto || isTestingWebcamVideo)
+
+                            Button(action: {
+                                isTestingWebcamVideo = true
+                                statusMessage = "Merekam video webcam 3 detik..."
+                                Task {
+                                    do {
+                                        let video = try await WebcamCaptureService.shared.recordVideo(durationSeconds: 3.0)
+                                        let formattedSize = ByteCountFormatter.string(fromByteCount: video.fileSizeBytes, countStyle: .file)
+                                        await MainActor.run {
+                                            isTestingWebcamVideo = false
+                                            statusMessage = "Video 3 detik selesai direkam (\(formattedSize)). Tersedia di Canvas!"
+                                        }
+                                    } catch {
+                                        await MainActor.run {
+                                            isTestingWebcamVideo = false
+                                            statusMessage = "Gagal merekam video: \(error.localizedDescription)"
+                                        }
+                                    }
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: isTestingWebcamVideo ? "record.circle.fill" : "video.fill")
+                                        .foregroundColor(isTestingWebcamVideo ? .red : .primary)
+                                    Text(isTestingWebcamVideo ? "Merekam (3 detik)..." : "Rekam Video (3s)")
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(isTestingWebcamPhoto || isTestingWebcamVideo)
                         }
                     }
                 }

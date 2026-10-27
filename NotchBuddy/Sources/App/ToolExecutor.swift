@@ -107,7 +107,7 @@ final class ToolExecutor: @unchecked Sendable {
         playbookListDef, playbookRunDef,
         toolSynthesizeDef, toolListDynamicDef, toolRunDynamicDef,
         laptopSecurityAuditDef, networkScanLanDef, networkDiagnosticsDef,
-        cameraCapturePhotoDef, cameraAnalyzeDef,
+        cameraCapturePhotoDef, cameraAnalyzeDef, cameraRecordVideoDef,
         faceEnrollOwnerDef, faceVerifyPresenceDef,
         cctvListCamerasDef, cctvGetSnapshotDef, cctvAddCameraDef,
         dockerListContainersDef, dockerGetLogsDef, dockerRestartContainerDef,
@@ -894,6 +894,20 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    static let cameraRecordVideoDef = LLMToolDef(
+        name: "camera_record_video",
+        description: "Rekam video singkat menggunakan kamera webcam FaceTime MacBook (H.264 MP4). Hasil rekaman otomatis tersaji di Canvas untuk langsung ditonton.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "duration_seconds": .object([
+                    "type": .string("number"),
+                    "description": .string("Durasi rekaman dalam detik (opsional, default: 3.0 detik, rentang 1-60 detik).")
+                ]),
+            ]),
+        ])
+    )
+
     // MARK: - Face Recognition & Presence Guard (Paket 7)
     static let faceEnrollOwnerDef = LLMToolDef(
         name: "face_enroll_owner",
@@ -1588,6 +1602,11 @@ final class ToolExecutor: @unchecked Sendable {
         "take_photo": "camera_capture_photo",
         "capture_photo": "camera_capture_photo",
         "camera_snapshot": "camera_capture_photo",
+        "camera_record_video": "camera_record_video",
+        "webcam_record": "camera_record_video",
+        "record_video": "camera_record_video",
+        "take_video": "camera_record_video",
+        "camera_video": "camera_record_video",
         "webcam_analyze": "camera_analyze",
         "see_webcam": "camera_analyze",
         "face_register": "face_enroll_owner",
@@ -1735,6 +1754,7 @@ final class ToolExecutor: @unchecked Sendable {
         case "network_scan_lan":      raw = "lan scan"
         case "network_diagnostics":   raw = input["target_host"]?.stringValue ?? "diagnostics"
         case "camera_capture_photo":  raw = "webcam snapshot"
+        case "camera_record_video":   raw = "webcam video recording"
         case "camera_analyze":        raw = input["prompt"]?.stringValue ?? "webcam analyze"
         case "face_enroll_owner":     raw = "face enroll"
         case "face_verify_presence":  raw = "face presence check"
@@ -1880,6 +1900,7 @@ final class ToolExecutor: @unchecked Sendable {
         case "network_scan_lan":      category = .network; target = "lan scan"
         case "network_diagnostics":   category = .network; target = input["target_host"]?.stringValue ?? "diagnostics"
         case "camera_capture_photo":  category = .appControl; target = "webcam"
+        case "camera_record_video":   category = .appControl; target = "webcam video"
         case "camera_analyze":        category = .appControl; target = "webcam analyze"
         case "face_enroll_owner":     category = .appControl; target = "face enroll"
         case "face_verify_presence":  category = .appControl; target = "face presence"
@@ -2141,10 +2162,20 @@ final class ToolExecutor: @unchecked Sendable {
         case "camera_capture_photo":
             do {
                 let res = try await WebcamCaptureService.shared.capturePhoto()
-                let out = "Foto webcam berhasil diambil dan disimpan ke `\(res.filePath)` (Resolusi: \(res.width)x\(res.height) px, Wajah terdeteksi: \(res.detectedFacesCount))."
+                let out = "Foto webcam berhasil diambil dan disimpan ke `\(res.filePath)` (Resolusi: \(res.width)x\(res.height) px, Wajah terdeteksi: \(res.detectedFacesCount)). Foto dapat langsung dilihat di Canvas."
                 return ToolResult(output: out)
             } catch {
                 return ToolResult(output: "Gagal mengambil foto webcam: \(error.localizedDescription)", isError: true)
+            }
+        case "camera_record_video":
+            do {
+                let duration = input["duration_seconds"]?.numberValue ?? (input["duration_seconds"]?.stringValue.flatMap(Double.init)) ?? 3.0
+                let res = try await WebcamCaptureService.shared.recordVideo(durationSeconds: duration)
+                let sizeFormatted = ByteCountFormatter.string(fromByteCount: res.fileSizeBytes, countStyle: .file)
+                let out = "Video webcam (\(String(format: "%.1f", res.durationSeconds)) detik) berhasil direkam ke `\(res.filePath)` (Ukuran: \(sizeFormatted), Resolusi: \(res.width)x\(res.height) px). Video kini dapat ditonton di Canvas atau Media Player."
+                return ToolResult(output: out)
+            } catch {
+                return ToolResult(output: "Gagal merekam video webcam: \(error.localizedDescription)", isError: true)
             }
         case "camera_analyze":
             do {

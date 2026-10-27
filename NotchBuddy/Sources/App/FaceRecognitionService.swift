@@ -46,7 +46,7 @@ public final class FaceRecognitionService: @unchecked Sendable {
     public func enrollOwnerFace(imageData: Data) async throws -> FaceEnrollmentResult {
         guard let image = NSImage(data: imageData),
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return FaceEnrollmentResult(isSuccess: false, qualityScore: 0, message: "Format gambar tidak valid.")
+            return FaceEnrollmentResult(isSuccess: false, qualityScore: 0, message: "Format gambar tidak valid atau data kamera korup.")
         }
 
         let faceRectsReq = VNDetectFaceRectanglesRequest()
@@ -56,19 +56,27 @@ public final class FaceRecognitionService: @unchecked Sendable {
         try handler.perform([faceRectsReq, faceQualityReq])
 
         guard let faces = faceRectsReq.results, !faces.isEmpty else {
-            return FaceEnrollmentResult(isSuccess: false, qualityScore: 0, message: "Tidak ada wajah yang terdeteksi dalam foto. Pastikan pencahayaan cukup dan wajah menghadap kamera.")
+            return FaceEnrollmentResult(
+                isSuccess: false,
+                qualityScore: 0,
+                message: "Tidak ada wajah yang terdeteksi. Pastikan pencahayaan ruangan cukup dan wajah menghadap langsung ke kamera FaceTime HD MacBook Anda."
+            )
         }
 
         if faces.count > 1 {
-            return FaceEnrollmentResult(isSuccess: false, qualityScore: 0, message: "Terdeteksi \(faces.count) wajah dalam foto. Pastikan hanya ada Anda sendiri di depan kamera saat registrasi.")
+            return FaceEnrollmentResult(
+                isSuccess: false,
+                qualityScore: 0,
+                message: "Terdeteksi \(faces.count) wajah dalam frame. Pastikan hanya ada Anda sendiri di depan layar saat proses pendaftaran."
+            )
         }
 
         let primaryFace = faces[0]
-        let qualityScore = primaryFace.faceCaptureQuality ?? 0.5
+        let qualityScore = faceQualityReq.results?.first?.faceCaptureQuality ?? primaryFace.faceCaptureQuality ?? 0.85
 
         // Ekstrak cropped face CGImage untuk feature print
         guard let croppedFaceCG = cropFace(from: cgImage, boundingBox: primaryFace.boundingBox) else {
-            return FaceEnrollmentResult(isSuccess: false, qualityScore: qualityScore, message: "Gagal memotong area wajah.")
+            return FaceEnrollmentResult(isSuccess: false, qualityScore: qualityScore, message: "Gagal memotong area wajah untuk ekstraksi biometrik.")
         }
 
         // Generate Image Feature Print
@@ -77,7 +85,7 @@ public final class FaceRecognitionService: @unchecked Sendable {
         try cropHandler.perform([featurePrintReq])
 
         guard let printObs = featurePrintReq.results?.first as? VNFeaturePrintObservation else {
-            return FaceEnrollmentResult(isSuccess: false, qualityScore: qualityScore, message: "Gagal membuat sidik wajah (feature print).")
+            return FaceEnrollmentResult(isSuccess: false, qualityScore: qualityScore, message: "Gagal mengekstraksi sidik biometrik wajah (feature print).")
         }
 
         // Simpan ke UserDefaults
@@ -85,10 +93,33 @@ public final class FaceRecognitionService: @unchecked Sendable {
         defaults.set(archivedData, forKey: ownerFeaturePrintKey)
         defaults.set(Date(), forKey: ownerEnrolledDateKey)
 
+        // Simpan snapshot thumbnail pemilik ke direktori app support / temp
+        let tempAvatarUrl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mochi_owner_avatar.jpg")
+        try? imageData.write(to: tempAvatarUrl)
+
+        // Publikasikan ke Canvas Artifact
+        let artifact = CanvasArtifact(
+            id: "owner_enrolled_\(Int(Date().timeIntervalSince1970))",
+            title: "Pendaftaran Wajah Pemilik Berhasil",
+            type: .document,
+            content: """
+            # Pendaftaran Wajah Pemilik Berhasil ✓
+            - **Waktu**: \(Date().formatted())
+            - **Kualitas Deteksi**: \(String(format: "%.0f%%", qualityScore * 100))
+            - **Status Presence Guard**: Aktif
+            
+            Mochi kini dapat mengenali Anda saat kembali ke MacBook dan memperingatkan jika ada orang lain yang mengintip layar Anda.
+            """,
+            metadata: ["avatarPath": tempAvatarUrl.path]
+        )
+        Task { @MainActor in
+            CanvasManager.shared.currentArtifact = artifact
+        }
+
         return FaceEnrollmentResult(
             isSuccess: true,
             qualityScore: qualityScore,
-            message: "Wajah pemilik berhasil diregistrasikan dengan skor kualitas \(String(format: "%.0f%%", qualityScore * 100))."
+            message: "Wajah pemilik berhasil didaftarkan (Kualitas: \(String(format: "%.0f%%", qualityScore * 100))). Presence Guard aktif!"
         )
     }
 

@@ -2,14 +2,17 @@ import Foundation
 import AVFoundation
 import AppKit
 import Vision
+import CoreMedia
+import CoreVideo
 
-// MARK: - Webcam Visual Perception (Paket 6)
+// MARK: - Webcam Visual Perception & Recording (Paket 6 & Pembaruan Sistem)
 
 public enum WebcamError: LocalizedError, Sendable {
     case permissionDenied
     case noCameraAvailable
     case sessionConfigurationFailed
     case captureFailed(String)
+    case recordingFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -21,6 +24,8 @@ public enum WebcamError: LocalizedError, Sendable {
             return "Gagal mengonfigurasi sesi penangkapan kamera."
         case .captureFailed(let reason):
             return "Gagal mengambil foto: \(reason)"
+        case .recordingFailed(let reason):
+            return "Gagal merekam video: \(reason)"
         }
     }
 }
@@ -33,6 +38,15 @@ public struct WebcamCaptureResult: Sendable {
     public let height: Int
     public let detectedFacesCount: Int
     public let sceneClassifications: [String]
+}
+
+public struct WebcamVideoResult: Sendable {
+    public let timestamp: Date
+    public let filePath: String
+    public let durationSeconds: Double
+    public let fileSizeBytes: Int64
+    public let width: Int
+    public let height: Int
 }
 
 public final class WebcamCaptureService: @unchecked Sendable {
@@ -58,7 +72,7 @@ public final class WebcamCaptureService: @unchecked Sendable {
         }
     }
 
-    // MARK: - Capture Photo
+    // MARK: - Capture Photo (High Reliability via Video Sample Buffer)
 
     public func capturePhoto() async throws -> WebcamCaptureResult {
         let hasAuth = await checkAuthorization()
@@ -75,7 +89,7 @@ public final class WebcamCaptureService: @unchecked Sendable {
             captureQueue.async {
                 let session = AVCaptureSession()
                 session.beginConfiguration()
-                session.sessionPreset = .photo
+                session.sessionPreset = .high
 
                 guard let input = try? AVCaptureDeviceInput(device: device),
                       session.canAddInput(input) else {
@@ -84,23 +98,38 @@ public final class WebcamCaptureService: @unchecked Sendable {
                 }
                 session.addInput(input)
 
-                let photoOutput = AVCapturePhotoOutput()
-                guard session.canAddOutput(photoOutput) else {
-                    continuation.resume(throwing: WebcamError.sessionConfigurationFailed)
-                    return
-                }
-                session.addOutput(photoOutput)
-                session.commitConfiguration()
+                let videoOutput = AVCaptureVideoDataOutput()
+                videoOutput.alwaysDiscardsLateVideoFrames = true
+                videoOutput.videoSettings = [
+                    (kCVPixelBufferPixelFormatTypeKey as String): Int(kCVPixelFormatType_32BGRA)
+                ]
 
-                session.startRunning()
+                let gate = CompletionGate()
 
-                let delegate = SinglePhotoCaptureDelegate { result in
+                let grabber = SingleFrameGrabber { result in
+                    guard gate.tryComplete() else { return }
                     session.stopRunning()
                     continuation.resume(with: result)
                 }
 
-                let settings = AVCapturePhotoSettings()
-                photoOutput.capturePhoto(with: settings, delegate: delegate)
+                let videoQueue = DispatchQueue(label: "com.notchbuddy.webcam.grabber", qos: .userInitiated)
+                videoOutput.setSampleBufferDelegate(grabber, queue: videoQueue)
+
+                guard session.canAddOutput(videoOutput) else {
+                    continuation.resume(throwing: WebcamError.sessionConfigurationFailed)
+                    return
+                }
+                session.addOutput(videoOutput)
+                session.commitConfiguration()
+
+                session.startRunning()
+
+                // Fallback timeout pengaman 6 detik
+                DispatchQueue.global().asyncAfter(deadline: .now() + 6.0) {
+                    guard gate.tryComplete() else { return }
+                    session.stopRunning()
+                    continuation.resume(throwing: WebcamError.captureFailed("Waktu respons kamera habis (timeout)"))
+                }
             }
         }
 
@@ -120,10 +149,7 @@ public final class WebcamCaptureService: @unchecked Sendable {
             height = cgImage.height
 
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            
-            // 1. Deteksi Wajah
             let faceReq = VNDetectFaceRectanglesRequest()
-            // 2. Klasifikasi Pemandangan/Objek
             let classifyReq = VNClassifyImageRequest()
 
             try? handler.perform([faceReq, classifyReq])
@@ -140,7 +166,7 @@ public final class WebcamCaptureService: @unchecked Sendable {
             }
         }
 
-        // Simpan ke Canvas Artifact agar pengguna dapat langsung membuka gambar di Canvas
+        // Simpan ke Canvas Artifact
         let artifact = CanvasArtifact(
             id: "webcam_\(Int(Date().timeIntervalSince1970))",
             title: "Foto Webcam (\(width)x\(height) px)",
@@ -172,6 +198,112 @@ public final class WebcamCaptureService: @unchecked Sendable {
         )
     }
 
+    // MARK: - Record Video (MP4 / H.264)
+
+    public func recordVideo(durationSeconds: Double = 3.0) async throws -> WebcamVideoResult {
+        let hasAuth = await checkAuthorization()
+        guard hasAuth else {
+            throw WebcamError.permissionDenied
+        }
+
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .unspecified)
+                ?? AVCaptureDevice.default(for: .video) else {
+            throw WebcamError.noCameraAvailable
+        }
+
+        let clampedDuration = max(1.0, min(durationSeconds, 60.0))
+        let outputUrl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mochi_webcam_video_\(Int(Date().timeIntervalSince1970)).mp4")
+
+        let (url, width, height): (URL, Int, Int) = try await withCheckedThrowingContinuation { continuation in
+            captureQueue.async {
+                let session = AVCaptureSession()
+                session.beginConfiguration()
+                session.sessionPreset = .high
+
+                guard let input = try? AVCaptureDeviceInput(device: device),
+                      session.canAddInput(input) else {
+                    continuation.resume(throwing: WebcamError.sessionConfigurationFailed)
+                    return
+                }
+                session.addInput(input)
+
+                let videoOutput = AVCaptureVideoDataOutput()
+                videoOutput.alwaysDiscardsLateVideoFrames = true
+                videoOutput.videoSettings = [
+                    (kCVPixelBufferPixelFormatTypeKey as String): Int(kCVPixelFormatType_32BGRA)
+                ]
+
+                let gate = CompletionGate()
+
+                let recorder = VideoRecorderSession(outputUrl: outputUrl, durationSeconds: clampedDuration) { result in
+                    guard gate.tryComplete() else { return }
+                    session.stopRunning()
+                    continuation.resume(with: result)
+                }
+
+                let videoQueue = DispatchQueue(label: "com.notchbuddy.webcam.recorder", qos: .userInitiated)
+                videoOutput.setSampleBufferDelegate(recorder, queue: videoQueue)
+
+                guard session.canAddOutput(videoOutput) else {
+                    continuation.resume(throwing: WebcamError.sessionConfigurationFailed)
+                    return
+                }
+                session.addOutput(videoOutput)
+                session.commitConfiguration()
+
+                session.startRunning()
+
+                // Fallback timeout pengaman (durasi + 6 detik)
+                DispatchQueue.global().asyncAfter(deadline: .now() + clampedDuration + 6.0) {
+                    guard gate.tryComplete() else { return }
+                    session.stopRunning()
+                    continuation.resume(throwing: WebcamError.recordingFailed("Waktu perekaman video habis (timeout)"))
+                }
+            }
+        }
+
+        let fileSizeBytes: Int64
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? Int64 {
+            fileSizeBytes = size
+        } else {
+            fileSizeBytes = 0
+        }
+
+        // Publikasikan ke Canvas Artifact sebagai media video player
+        let sizeFormatted = ByteCountFormatter.string(fromByteCount: fileSizeBytes, countStyle: .file)
+        let artifact = CanvasArtifact(
+            id: "video_\(Int(Date().timeIntervalSince1970))",
+            title: "Video Webcam (\(String(format: "%.1f", clampedDuration))s)",
+            type: .media,
+            content: """
+            # Rekaman Video Webcam MacBook
+            - **Waktu**: \(Date().formatted())
+            - **Durasi**: \(String(format: "%.1f", clampedDuration)) detik
+            - **Resolusi**: \(width) x \(height) px
+            - **Ukuran File**: \(sizeFormatted)
+            - **Path File**: `\(url.path)`
+            """,
+            metadata: [
+                "filePath": url.path,
+                "mediaType": "video",
+                "mimeType": "video/mp4"
+            ]
+        )
+        Task { @MainActor in
+            CanvasManager.shared.currentArtifact = artifact
+        }
+
+        return WebcamVideoResult(
+            timestamp: Date(),
+            filePath: url.path,
+            durationSeconds: clampedDuration,
+            fileSizeBytes: fileSizeBytes,
+            width: width,
+            height: height
+        )
+    }
+
     // MARK: - Capture & Analyze (Multi-modal or Local Vision)
 
     public func captureAndAnalyze(prompt: String? = nil) async throws -> String {
@@ -196,35 +328,184 @@ public final class WebcamCaptureService: @unchecked Sendable {
     }
 }
 
-// MARK: - Internal Delegate Helper
+// MARK: - Thread-Safe Completion Gate
 
-private final class SinglePhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
+private final class CompletionGate: @unchecked Sendable {
+    private var isCompleted = false
+    private let lock = NSLock()
+
+    func tryComplete() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if isCompleted { return false }
+        isCompleted = true
+        return true
+    }
+}
+
+// MARK: - Internal Single Frame Grabber Delegate
+
+private final class SingleFrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let completion: @Sendable (Result<Data, Error>) -> Void
-    private var didFinish = false
+    private var framesReceived = 0
+    private var isDone = false
     private let lock = NSLock()
 
     init(completion: @escaping @Sendable (Result<Data, Error>) -> Void) {
         self.completion = completion
     }
 
-    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         lock.lock()
         defer { lock.unlock() }
+        guard !isDone else { return }
 
-        guard !didFinish else { return }
-        didFinish = true
+        framesReceived += 1
 
-        if let error = error {
-            completion(.failure(error))
-            return
+        // Lewati 3 frame pertama untuk auto-exposure dan auto-white-balance warm-up
+        if framesReceived >= 4 {
+            isDone = true
+            guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+                completion(.failure(WebcamError.captureFailed("Gagal memperoleh image buffer dari kamera")))
+                return
+            }
+
+            let ciImage = CIImage(cvImageBuffer: imageBuffer)
+            let rep = NSCIImageRep(ciImage: ciImage)
+            let nsImage = NSImage(size: rep.size)
+            nsImage.addRepresentation(rep)
+
+            guard let tiffData = nsImage.tiffRepresentation,
+                  let bitmapRep = NSBitmapImageRep(data: tiffData),
+                  let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.9]) else {
+                completion(.failure(WebcamError.captureFailed("Gagal mengonversi frame kamera ke format JPEG")))
+                return
+            }
+
+            completion(.success(jpegData))
         }
-
-        guard let data = photo.fileDataRepresentation() else {
-            completion(.failure(WebcamError.captureFailed("Gagal mengonversi frame foto ke data biner")))
-            return
-        }
-
-        completion(.success(data))
     }
 }
 
+// MARK: - Internal Video Recorder Session
+
+private final class VideoRecorderSession: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+    private var assetWriter: AVAssetWriter?
+    private var writerInput: AVAssetWriterInput?
+    private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+    private var isRecording = false
+    private var sessionStartTime: CMTime?
+    private var frameCount = 0
+    private let targetFrames: Int
+    private let outputUrl: URL
+    private var videoWidth = 0
+    private var videoHeight = 0
+    private let completion: @Sendable (Result<(URL, Int, Int), Error>) -> Void
+    private let lock = NSLock()
+
+    init(outputUrl: URL, durationSeconds: Double, completion: @escaping @Sendable (Result<(URL, Int, Int), Error>) -> Void) {
+        self.outputUrl = outputUrl
+        self.targetFrames = max(24, Int(durationSeconds * 24.0)) // Target 24 fps
+        self.completion = completion
+        super.init()
+    }
+
+    private func setupWriter(width: Int, height: Int) throws {
+        if FileManager.default.fileExists(atPath: outputUrl.path) {
+            try? FileManager.default.removeItem(at: outputUrl)
+        }
+
+        let writer = try AVAssetWriter(outputURL: outputUrl, fileType: .mp4)
+        let videoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height
+        ]
+
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        input.expectsMediaDataInRealTime = true
+
+        let sourcePixelBufferAttributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height
+        ]
+
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: input,
+            sourcePixelBufferAttributes: sourcePixelBufferAttributes
+        )
+
+        guard writer.canAdd(input) else {
+            throw WebcamError.recordingFailed("Tidak dapat menambahkan video input ke AVAssetWriter")
+        }
+        writer.add(input)
+
+        self.assetWriter = writer
+        self.writerInput = input
+        self.pixelBufferAdaptor = adaptor
+        self.videoWidth = width
+        self.videoHeight = height
+
+        guard writer.startWriting() else {
+            throw WebcamError.recordingFailed(writer.error?.localizedDescription ?? "Gagal memulai AVAssetWriter")
+        }
+        self.isRecording = true
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+
+        if assetWriter == nil {
+            let width = CVPixelBufferGetWidth(imageBuffer)
+            let height = CVPixelBufferGetHeight(imageBuffer)
+            do {
+                try setupWriter(width: width, height: height)
+            } catch {
+                completion(.failure(error))
+                isRecording = false
+                return
+            }
+        }
+
+        guard isRecording,
+              let writer = assetWriter,
+              let input = writerInput,
+              let adaptor = pixelBufferAdaptor else {
+            return
+        }
+
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+
+        if sessionStartTime == nil {
+            writer.startSession(atSourceTime: pts)
+            sessionStartTime = pts
+        }
+
+        if input.isReadyForMoreMediaData {
+            if adaptor.append(imageBuffer, withPresentationTime: pts) {
+                frameCount += 1
+            }
+        }
+
+        if frameCount >= targetFrames {
+            isRecording = false
+            input.markAsFinished()
+            let capturedWriter = writer
+            let outUrl = outputUrl
+            let w = videoWidth
+            let h = videoHeight
+            let comp = completion
+            writer.finishWriting {
+                if let error = capturedWriter.error {
+                    comp(.failure(error))
+                } else {
+                    comp(.success((outUrl, w, h)))
+                }
+            }
+        }
+    }
+}

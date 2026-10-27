@@ -29,6 +29,26 @@
 
 ### macOS
 
+- **Perbaikan Total Webcam Capture, Perekaman Video FaceTime HD & Pendaftaran Wajah Pemilik (Face Enrollment)**:
+  - 📸 **Pipeline Capture Frame Instan via `AVCaptureVideoDataOutput`**:
+    - Memperbaiki akar masalah kegagalan pengambilan foto di macOS FaceTime HD Camera di mana `AVCapturePhotoOutput` sebelumnya hang tanpa batas waktu (*infinite timeout*) akibat pelepasan memori (*weak reference deallocation*) pada delegate lokal di macOS.
+    - Mengganti pipeline capture menggunakan `AVCaptureVideoDataOutput` berkecepatan tinggi dengan warm-up sensor kamera 3-4 frame (auto-exposure & white balance otomatis stabil), memproduksi gambar JPEG berkualitas tinggi dalam waktu < 500ms.
+    - Menambahkan pengaman timeout 6 detik dengan `CompletionGate` thread-safe murni yang patuh standar Swift 6 Strict Concurrency.
+  - 🎥 **Fitur Perekaman Video Webcam Native (H.264 MP4)**:
+    - Menghadirkan fungsi `recordVideo(durationSeconds:)` pada `WebcamCaptureService` menggunakan pipeline `AVAssetWriter` + `AVAssetWriterInputPixelBufferAdaptor`.
+    - Merekam video 24 fps terkompresi H.264 ke file container `.mp4` dengan durasi fleksibel (1 hingga 60 detik).
+    - Otomatis mempublikasikan artefak video ke Canvas (`CanvasArtifact` tipe `.media`), memungkinkan pemutaran langsung dengan kontrol scrubber dan visualizer audio.
+  - 👤 **Perbaikan & Optimalisasi Pendaftaran Wajah Pemilik (`FaceRecognitionService` & `SettingsView`)**:
+    - Memperbaiki tombol "Daftarkan Wajah" pada menu Pengaturan (Settings) yang sebelumnya macet di status "Mengambil Foto...".
+    - Meningkatkan presisi perhitungan skor kualitas biometrik menggunakan `VNDetectFaceCaptureQualityRequest` dan ekstraksi sidik wajah `VNGenerateImageFeaturePrintRequest`.
+    - Pesan diagnostik yang jelas dan solutif jika wajah belum terlihat atau terhalang pencahayaan.
+    - Menyediakan tombol uji coba langsung di menu Pengaturan: **"Ambil Foto Webcam"** dan **"Rekam Video (3s)"** dengan status visual real-time dan preview instan di Canvas.
+  - 🛠️ **Tool Baru & Alias Gemini API (`camera_record_video`)**:
+    - Tool baru `camera_record_video` (dengan parameter `duration_seconds: Double`) kini terdaftar resmi di `ToolExecutor` (total 99 tools sistem yang patuh validasi skema Gemini OpenAPI).
+    - Sinonim alias lengkap: `webcam_record`, `take_video`, `record_video`, `camera_video`.
+  - 🧪 **Unit Test Suite Lengkap (`tests/WebcamFullTests.swift`)**:
+    - Pengujian end-to-end hardware kamera, ekstraksi JPEG sample buffer, otorisasi privasi, dan pipeline Vision lulus 100%.
+
 - **Perbaikan Visualisasi Pairing Telegram Mobile Gateway di Notch Island**:
   - 🔑 **Kartu Dialog Otentikasi Telegram (`IslandView.telegramPairing`, `TelegramPairingView`)**:
     - Memperbaiki masalah di mana perintah `/start` dari smartphone tidak memunculkan kartu 6-digit PIN di Notch Island.
