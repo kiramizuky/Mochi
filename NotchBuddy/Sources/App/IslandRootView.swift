@@ -107,10 +107,22 @@ struct IslandContainer: View {
 
             Group {
                 if state.mode == .compact {
-                    CompactMiniGrid(state: state)
-                        .scaleEffect(IslandRestingLayout(width: islandWidth, height: islandHeight).miniGridScale)
-                        .position(x: islandWidth - 40, y: islandHeight / 2)
-                        .transition(.opacity)
+                    if state.isMediaPlaying {
+                        NotchCompactMediaPill()
+                            .position(x: islandWidth - 45, y: islandHeight / 2)
+                            .transition(.opacity)
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) {
+                                    state.view = .media
+                                    state.mode = .expanded
+                                }
+                            }
+                    } else {
+                        CompactMiniGrid(state: state)
+                            .scaleEffect(IslandRestingLayout(width: islandWidth, height: islandHeight).miniGridScale)
+                            .position(x: islandWidth - 40, y: islandHeight / 2)
+                            .transition(.opacity)
+                    }
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: state.mode == .compact)
@@ -583,6 +595,40 @@ struct CompactMiniGrid: View {
             }
         }
         .frame(width: 28, height: 28)
+    }
+}
+
+// MARK: - Notch Compact Media Pill (Animated Live Wavebars)
+
+struct NotchCompactMediaPill: View {
+    @ObservedObject var waveform = AudioWaveformEngine.shared
+
+    var body: some View {
+        HStack(spacing: 5) {
+            // Mini Icon Media / Album Dot
+            Circle()
+                .fill(Color.accentColor.opacity(0.85))
+                .frame(width: 13, height: 13)
+                .overlay(
+                    Image(systemName: "music.note")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundColor(.black)
+                )
+
+            // 4-Bar Equalizer Live Wavebars
+            HStack(alignment: .bottom, spacing: 1.8) {
+                ForEach(0..<min(4, waveform.compactWaveHeights.count), id: \.self) { idx in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.accentColor)
+                        .frame(width: 2.2, height: waveform.compactWaveHeights[idx])
+                }
+            }
+            .frame(height: 13, alignment: .bottom)
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .background(Color.white.opacity(0.1))
+        .clipShape(Capsule())
     }
 }
 

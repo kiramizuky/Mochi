@@ -538,6 +538,12 @@ final class AppState: ObservableObject {
     @Published var tasks: [AgentTask] = []
     @Published var focusId: String? = nil
 
+    // Media Player & Notch Studio State
+    @Published var activeMediaItem: MediaItem? = nil
+    @Published var isMediaPlaying: Bool = false
+    @Published var mediaPlaybackPosition: Double = 0.0
+    @Published var mediaDuration: Double = 0.0
+
     // Bot state override
     @Published var stateOverride: BotState? = nil
     @Published var activePlaybookProgress: String? = nil

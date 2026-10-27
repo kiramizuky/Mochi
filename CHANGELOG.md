@@ -29,6 +29,23 @@
 
 ### macOS
 
+- **Dynamic Island Media Studio & Multi-Format Player (Paket 14 - Tahap A & B)**:
+  - 🎵 **Dynamic Media Pill (Resting / Compact Mode) (`IslandRootView.swift`, `AudioWaveformEngine.swift`)**:
+    - Notch Island melakukan *fluid morphing* saat media audio/video berputar di latar belakang, memanjang secara anggun ke lebar 248px.
+    - Menampilkan mini cover art atau animated music note di sebelah kiri notch.
+    - **Live Equalizer Wavebars**: 4 batang frekuensi audio dinamis berukuran 2.5px yang bergerak memantul mulus (3px s.d. 14px) mengikuti irama lagu dengan warna aksen adaptif.
+    - Interaktivitas klik: 1 ketukan pada Media Pill langsung membuka kartu expanded *Media Studio*.
+  - 🎛️ **Expanded Notch Media Studio Card (`IslandView.media`, `NotchMediaStudioView.swift`)**:
+    - Kartu UI interaktif berukuran tinggi 195px dengan 3 tab media: Musik, Video, dan Foto/Screenshot.
+    - **Music Player Card**: Cover art dengan ambient blur glow memancarkan warna album, judul lagu & artis *running text (marquee)*, timeline scrubber interaktif dengan timecode, kontrol lengkap (Play/Pause, Skip, Previous, Shuffle, Repeat), dan 16-bar expanded visualizer spectrum.
+    - **Video Player Card**: Embedded native player (`AVPlayer`) untuk review rekaman layar, klip video lokal, atau rekaman CCTV dengan overlay tombol kontrol dan loop scrubber.
+    - **Image Viewer & Screenshot Card**: Penampil tangkapan layar/foto resolusi tinggi dengan badge metadata (dimensi piksel, ukuran file, format), tombol salin ke clipboard macOS, dan horizontal thumbnail carousel strip.
+  - ⚙️ **Media Manager Core & Audio Playback Service (`MediaManagerService.swift`, `AudioPlaybackService.swift`)**:
+    - Deteksi otomatis track yang sedang diputar di Spotify & Apple Music via background AppleScript polling tanpa memblokir render frame 60 FPS.
+    - Scanner otomatis berkas tangkapan layar terbaru dari `~/Desktop` dan `~/Pictures/Screenshots`.
+    - Engine pemutar file audio lokal mandiri via `AVAudioPlayer` dengan dukungan seek, volume, dan progress timer.
+
+
 - **Real-Time Full-Duplex Voice 2.0 (Conversational Live Stream) (Paket 12)**:
   - 🎙️ **Streaming Suara Dua Arah Sub-Detik (`RealtimeVoiceStreamService.swift`, `VoiceDuplexEngine.swift`)**:
     - Arsitektur live stream continuous full-duplex dengan VAD (Voice Activity Detection) dinamis dan adaptive silence window (~380ms) untuk mengeliminasi jeda "tunggu berpikir".
