@@ -413,5 +413,44 @@ public final class TelegramGatewayService: @unchecked Sendable {
         guard let chatId = allowedChatId, let token = botToken else { return }
         await sendMessage(chatId: chatId, text: "🔔 *Notifikasi Mac:*\n\(text)", token: token)
     }
+
+    /// Mengirim foto (misal tangkapan penyusup webcam) ke Telegram terdaftar.
+    @discardableResult
+    public func sendPhoto(imageData: Data, caption: String, chatId: String? = nil, filename: String = "sentry.jpg") async -> Bool {
+        guard let token = botToken, let targetChatId = chatId ?? allowedChatId else { return false }
+        let boundary = "Boundary-\(UUID().uuidString)"
+        guard let url = URL(string: "https://api.telegram.org/bot\(token)/sendPhoto") else { return false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(targetChatId)\r\n".data(using: .utf8)!)
+
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"caption\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(caption)\r\n".data(using: .utf8)!)
+
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"photo\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                return true
+            }
+        } catch {
+            return false
+        }
+        return false
+    }
 }
 

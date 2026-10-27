@@ -116,6 +116,8 @@ final class ToolExecutor: @unchecked Sendable {
         k8sGetPodsDef, k8sDescribePodDef, k8sPodLogsDef,
         dbInspectSchemaDef, dbExecuteSafeQueryDef,
         editorGotoFileLineDef, gitSmartCommitDef, ghPrReviewSummaryDef,
+        sentryEnableAwayModeDef, sentryCheckStatusDef, sentryScanWifiIntrudersDef,
+        sentryTrustDeviceDef, sentryAutohealCheckDef,
     ]
 
     /// Semua alat yang tersedia termasuk alat dinamis yang disintesis on-the-fly.
@@ -1192,6 +1194,61 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    // MARK: - Proactive Sentry & Autonomous Health Watchers (Paket 11)
+    static let sentryEnableAwayModeDef = LLMToolDef(
+        name: "sentry_enable_away_mode",
+        description: "Aktifkan atau nonaktifkan mode penjagaan Away Sentry (anti-maling & penyusup fisik saat laptop ditinggal). Mengambil foto senyap via kamera dan mengirimkan peringatan ke Telegram bila terdeteksi wajah asing.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "enabled": .object(["type": .string("boolean"), "description": .string("True untuk mengaktifkan Away Sentry, false untuk menonaktifkan.")]),
+            ]),
+            "required": .array([.string("enabled")]),
+        ])
+    )
+
+    static let sentryCheckStatusDef = LLMToolDef(
+        name: "sentry_check_status",
+        description: "Periksa status menyeluruh sistem pengawas Sentry (status Away Sentry, Wi-Fi Watcher, Auto-Healer, status daemon, dan daftar insiden keamanan terakhir).",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    static let sentryScanWifiIntrudersDef = LLMToolDef(
+        name: "sentry_scan_wifi_intruders",
+        description: "Pindai jaringan Wi-Fi lokal untuk mendeteksi perangkat asing atau tidak dikenal yang baru terhubung. Menampilkan tabel di Canvas dan proaktif chip jika terdeteksi.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    static let sentryTrustDeviceDef = LLMToolDef(
+        name: "sentry_trust_device",
+        description: "Tandai dan percayai sebuah perangkat di jaringan lokal berdasarkan MAC address atau IP agar tidak dianggap sebagai perangkat asing berbahaya.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "mac": .object(["type": .string("string"), "description": .string("MAC address perangkat yang akan dipercayai.")]),
+                "label": .object(["type": .string("string"), "description": .string("Nama label perangkat (contoh: 'iPhone Ali', 'Smart TV').")]),
+            ]),
+            "required": .array([.string("mac")]),
+        ])
+    )
+
+    static let sentryAutohealCheckDef = LLMToolDef(
+        name: "sentry_autoheal_check",
+        description: "Audit kesehatan seketika untuk container Docker dan remote server SSH. Secara otomatis me-restart container yang mengalami crash (Exit Code non-0) jika auto-heal aktif.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "restart_docker": .object(["type": .string("boolean"), "description": .string("True untuk otomatis restart container yang crash (opsional, default: true).")]),
+            ]),
+        ])
+    )
+
     static let officeListSheetsDef = LLMToolDef(
         name: "office_list_sheets",
         description: "List all worksheet/tab names in the active Microsoft Excel or Numbers workbook.",
@@ -1461,6 +1518,16 @@ final class ToolExecutor: @unchecked Sendable {
         "git_commit": "git_smart_commit",
         "review_pr": "gh_pr_review_summary",
         "pr_review": "gh_pr_review_summary",
+        "away_sentry": "sentry_enable_away_mode",
+        "sentry_mode": "sentry_enable_away_mode",
+        "sentry_status": "sentry_check_status",
+        "check_sentry": "sentry_check_status",
+        "wifi_sentry": "sentry_scan_wifi_intruders",
+        "scan_wifi_intruders": "sentry_scan_wifi_intruders",
+        "trust_device": "sentry_trust_device",
+        "trust_mac": "sentry_trust_device",
+        "auto_heal": "sentry_autoheal_check",
+        "autoheal_check": "sentry_autoheal_check",
     ]
 
     /// Short, human-readable target for UI events and audit records.
@@ -1552,6 +1619,11 @@ final class ToolExecutor: @unchecked Sendable {
         case "editor_goto_file_line":   raw = input["path"]?.stringValue
         case "git_smart_commit":        raw = input["directory"]?.stringValue ?? "smart_commit"
         case "gh_pr_review_summary":    raw = input["pr_number"]?.stringValue ?? "pr_review"
+        case "sentry_enable_away_mode": raw = input["enabled"]?.boolValue == true ? "enable_away" : "disable_away"
+        case "sentry_check_status":     raw = "sentry_status"
+        case "sentry_scan_wifi_intruders": raw = "scan_wifi"
+        case "sentry_trust_device":     raw = input["mac"]?.stringValue ?? "trust_device"
+        case "sentry_autoheal_check":   raw = "autoheal"
         default:               raw = nil
         }
         let value = raw?.isEmpty == false ? raw! : name
@@ -1681,6 +1753,11 @@ final class ToolExecutor: @unchecked Sendable {
         case "editor_goto_file_line":   category = .appControl; target = input["path"]?.stringValue ?? "editor"
         case "git_smart_commit":        category = .shell; target = input["directory"]?.stringValue ?? "git"
         case "gh_pr_review_summary":    category = .shell; target = input["pr_number"]?.stringValue ?? "git"
+        case "sentry_enable_away_mode": category = .appControl; target = "away_sentry"
+        case "sentry_check_status":     category = .read;  target = "sentry"
+        case "sentry_scan_wifi_intruders": category = .network; target = "wifi_sentry"
+        case "sentry_trust_device":     category = .appControl; target = input["mac"]?.stringValue ?? "trust_device"
+        case "sentry_autoheal_check":   category = .shell; target = "autoheal"
         default:
             if let dyn = DynamicToolSynthesizer.shared.getTool(id: name) {
                 category = .shell
@@ -2109,6 +2186,45 @@ final class ToolExecutor: @unchecked Sendable {
             let dir = input["directory"]?.stringValue
             let (ok, msg, _) = await DeveloperEnvironmentService.shared.reviewPullRequest(prNumberOrBranch: pr, repoPath: dir)
             return ToolResult(output: msg, isError: !ok)
+        case "sentry_enable_away_mode":
+            let enabled = input["enabled"]?.boolValue ?? true
+            let msg = enabled ? ProactiveSentryService.shared.enableAwayMode() : ProactiveSentryService.shared.disableAwayMode()
+            return ToolResult(output: msg)
+        case "sentry_check_status":
+            let away = ProactiveSentryService.shared.isAwayModeActive ? "Aktif (Menjaga)" : "Nonaktif"
+            let wifi = ProactiveSentryService.shared.isWifiWatcherEnabled ? "Aktif" : "Nonaktif"
+            let heal = ProactiveSentryService.shared.isAutoHealEnabled ? "Aktif" : "Nonaktif"
+            let daemon = ProactiveSentryService.shared.isDaemonRunning ? "Berjalan" : "Berhenti"
+            let knownCount = ProactiveSentryService.shared.knownDevices.count
+            let incidents = ProactiveSentryService.shared.recentIncidents
+            var statusText = """
+            🛡️ Status Proactive Sentry & Autonomous Health Watchers:
+            • Away Sentry Mode (Anti-Theft/Intruder): \(away)
+            • LAN New-Device Sentry (Wi-Fi Watcher): \(wifi) (Perangkat Dikenal: \(knownCount))
+            • Container & Server Auto-Healer: \(heal)
+            • Background Daemon Watcher: \(daemon)
+            • Riwayat Insiden Terakhir: \(incidents.count) insiden tercatat.
+            """
+            if let last = incidents.first {
+                statusText += "\n\nInsiden Terbaru (\(last.type.rawValue)):\n\(last.summary) pada \(last.timestamp)"
+            }
+            return ToolResult(output: statusText)
+        case "sentry_scan_wifi_intruders":
+            let report = await ProactiveSentryService.shared.scanWifiForIntruders()
+            return ToolResult(output: report.summaryMarkdown)
+        case "sentry_trust_device":
+            guard let mac = input["mac"]?.stringValue, !mac.isEmpty else {
+                return ToolResult(output: "Harap masukkan MAC Address perangkat yang ingin dipercayai.", isError: true)
+            }
+            let label = input["label"]?.stringValue ?? "Trusted Device"
+            let msg = ProactiveSentryService.shared.trustDevice(mac: mac, label: label)
+            return ToolResult(output: msg)
+        case "sentry_autoheal_check":
+            if let restart = input["restart_docker"]?.boolValue {
+                ProactiveSentryService.shared.autoHealRestartDocker = restart
+            }
+            let report = await ProactiveSentryService.shared.runAutoHealAudit()
+            return ToolResult(output: report.summaryMarkdown)
         default:
             if let _ = DynamicToolSynthesizer.shared.getTool(id: name) {
                 var args: [String: String] = [:]

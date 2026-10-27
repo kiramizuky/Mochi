@@ -107,6 +107,13 @@ struct SettingsView: View {
     @State private var newCCTVUrl: String = ""
     @State private var isTestingCCTV: Bool = false
 
+    // Proactive Sentry & Autonomous Health Watchers (Paket 11)
+    @State private var sentryAwayMode: Bool = ProactiveSentryService.shared.isAwayModeActive
+    @State private var sentryWifiWatcher: Bool = ProactiveSentryService.shared.isWifiWatcherEnabled
+    @State private var sentryAutoHeal: Bool = ProactiveSentryService.shared.isAutoHealEnabled
+    @State private var sentryAutoHealRestartDocker: Bool = ProactiveSentryService.shared.autoHealRestartDocker
+    @State private var isRunningSentryCheck: Bool = false
+
     // Dynamic Tools
     @State private var dynamicToolsList: [DynamicTool] = DynamicToolSynthesizer.shared.allTools
     @State private var toolTestResult: String = ""
@@ -1320,6 +1327,100 @@ struct SettingsView: View {
                     .padding(6)
                     .background(Color.secondary.opacity(0.06))
                     .cornerRadius(6)
+                }
+                .padding(6)
+            }
+
+            // Proactive Sentry & Autonomous Health Watchers (Paket 11)
+            GroupBox("🛡️ Proactive Sentry & Autonomous Health Watchers") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Pengawasan keamanan proaktif menyeluruh: deteksi penyusup fisik via kamera senyap, pengawas perangkat asing di Wi-Fi, dan pemulih otomatis service container yang crash.")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(.secondary)
+
+                    // 1. Away Sentry
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("🛡️ Away Sentry Mode (Pengawas Anti-Maling & Penyusup)", isOn: $sentryAwayMode)
+                            .onChange(of: sentryAwayMode) { _, val in
+                                if val {
+                                    _ = ProactiveSentryService.shared.enableAwayMode()
+                                    statusMessage = "Away Sentry diaktifkan: Mengawasi laptop saat terkunci."
+                                } else {
+                                    _ = ProactiveSentryService.shared.disableAwayMode()
+                                    statusMessage = "Away Sentry dinonaktifkan."
+                                }
+                            }
+                        Text("Saat Mac terkunci atau Anda meninggalkan laptop di kafe/kantor, kamera memotret orang asing yang menatap layar dan mengirimkan foto darurat ke Telegram.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 18)
+                    }
+
+                    Divider()
+
+                    // 2. Wi-Fi Watcher
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Toggle("📡 LAN New-Device Sentry (Wi-Fi Watcher)", isOn: $sentryWifiWatcher)
+                                .onChange(of: sentryWifiWatcher) { _, val in
+                                    ProactiveSentryService.shared.isWifiWatcherEnabled = val
+                                }
+                            Spacer()
+                            Button("Pindai Wi-Fi Sekarang") {
+                                isRunningSentryCheck = true
+                                Task {
+                                    let r = await ProactiveSentryService.shared.scanWifiForIntruders()
+                                    isRunningSentryCheck = false
+                                    statusMessage = "Pemindaian Wi-Fi selesai: \(r.newDevices.count) perangkat baru terdeteksi."
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(isRunningSentryCheck)
+                        }
+                        Text("Mendeteksi perangkat baru/asing yang terhubung ke jaringan Wi-Fi lokal secara pasif dan menampilkan alert chip di Notch.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 18)
+                    }
+
+                    Divider()
+
+                    // 3. Auto-Healer
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Toggle("🩺 Container & Server Crash Auto-Healer", isOn: $sentryAutoHeal)
+                                .onChange(of: sentryAutoHeal) { _, val in
+                                    ProactiveSentryService.shared.isAutoHealEnabled = val
+                                }
+                            Spacer()
+                            Button("Audit Kesehatan Sekarang") {
+                                isRunningSentryCheck = true
+                                Task {
+                                    let r = await ProactiveSentryService.shared.runAutoHealAudit()
+                                    isRunningSentryCheck = false
+                                    statusMessage = "Audit selesai: \(r.crashedContainersFound.count) container crash, \(r.healedContainers.count) dipulihkan."
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(isRunningSentryCheck)
+                        }
+
+                        if sentryAutoHeal {
+                            Toggle("Otomatis restart Docker container yang crash (Exit code != 0)", isOn: $sentryAutoHealRestartDocker)
+                                .font(.system(size: 10.5))
+                                .padding(.leading, 18)
+                                .onChange(of: sentryAutoHealRestartDocker) { _, val in
+                                    ProactiveSentryService.shared.autoHealRestartDocker = val
+                                }
+                        }
+
+                        Text("Memantau Docker container dan server SSH terdaftar berkala. Memulihkan service mati secara otonom.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 18)
+                    }
                 }
                 .padding(6)
             }

@@ -29,6 +29,12 @@
 
 ### macOS
 
+- **Proactive Sentry & Autonomous Health Watchers (Paket 11)**:
+  - 🛡️ **Physical Intruder & Anti-Theft Guard (Away Sentry Mode - `ProactiveSentryService`)**: Penjaga fisik mandiri saat MacBook ditinggalkan di tempat umum atau kafe. Mendeteksi status lock screen macOS (`com.apple.screenIsLocked`) atau pengaktifan manual (`sentry_enable_away_mode` / `away_sentry`). Jika terdeteksi orang asing menatap layar via `FaceRecognitionService`, asisten memotret senyap dan mengirimkan peringatan darurat ke Telegram pemilik lengkap dengan foto, timestamp, dan nama Wi-Fi aktif.
+  - 📡 **LAN New-Device Sentry (Wi-Fi Watcher Daemon)**: Pemantau pasif jaringan Wi-Fi lokal berbasis perbedaan (diff delta) perangkat ARP (`sentry_scan_wifi_intruders` / `wifi_sentry`). Menampilkan proactive alert chip di Notch Island seketika bila ada perangkat asing baru terhubung ke Wi-Fi, dengan opsi verifikasi perangkat terpercaya (`sentry_trust_device` / `trust_device`).
+  - 🩺 **Container & Server Crash Auto-Healer**: Pemantauan otonom berkala terhadap Docker container dan server SSH terdaftar (`sentry_autoheal_check` / `auto_heal`). Mengidentifikasi container dengan status `exited` atau exit code abnormal dan memulihkannya secara mandiri via restart otonom, serta melaporkan service yang gagal pulih ke Notch Island dan Telegram.
+  - ⚙️ **Panel Pengaturan Sentry di Settings (`SettingsView.swift`)**: Kartu konfigurasi terpadu di tab *Otonom & Sensor* untuk mengaktifkan Away Sentry, Wi-Fi Watcher, dan Auto-Healer beserta tombol audit kesehatan seketika.
+
 - **DevOps, Cloud & Database Command Center Suite (Paket 10)**:
   - ☸️ **Kubernetes Cluster Sentinel (`KubernetesIntegrationService`)**: Pemantauan status pod dan deployment cluster per-namespace secara real-time (`k8s_get_pods` / `kubectl_pods`), inspeksi mendalam event crash/OOMKilled pod (`k8s_describe_pod` / `kubectl_describe`), dan pembacaan log runtime (`k8s_pod_logs` / `pod_logs`). Visualisasi otomatis disajikan dalam tabel interaktif di Canvas Studio.
   - 🗄️ **Database Safe Explorer & Query Engine (`DatabaseIntegrationService`)**: Mendukung PostgreSQL, MySQL, Redis, dan SQLite lokal dengan proteksi mutlak **Read-Only Guardrail**. Memblokir seluruh instruksi modifikasi atau destruktif (`DROP`, `DELETE`, `UPDATE`, `INSERT`, `TRUNCATE`, `ALTER`, `FLUSHALL`) secara otonom sebelum query dieksekusi. Menyajikan skema DDL relasi tabel (`db_inspect_schema`) dan hasil eksekusi query analitik `SELECT` (`db_execute_safe_query`) ke dalam spreadsheet Canvas yang dapat disortir dan dicari.
