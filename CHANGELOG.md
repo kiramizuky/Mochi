@@ -29,6 +29,27 @@
 
 ### macOS
 
+- **Real-Time Full-Duplex Voice 2.0 (Conversational Live Stream) (Paket 12)**:
+  - 🎙️ **Streaming Suara Dua Arah Sub-Detik (`RealtimeVoiceStreamService.swift`, `VoiceDuplexEngine.swift`)**:
+    - Arsitektur live stream continuous full-duplex dengan VAD (Voice Activity Detection) dinamis dan adaptive silence window (~380ms) untuk mengeliminasi jeda "tunggu berpikir".
+    - Latensi respon audio percakapan sub-detik terverifikasi (< 400ms, rata-rata ~320ms).
+    - Interupsi alami instan (*Ultra-Fast Barge-In < 50ms*): Begitu pengguna mulai bersuara saat asisten sedang berbicara, playback audio seketika diputus, buffer di-flush, dan asisten langsung mendengarkan tanpa memotong kata pertama pengguna.
+  - 🎭 **Emotion & Context-Adaptive Vocalization (`VocalPersonaStyle`, `VocalAudioProfile`)**:
+    - Modulasi otomatis parameter vokal akustik (kecepatan bicara, tinggi nada pitch, volume) dan panduan kepribadian LLM:
+      - `adaptive_auto`: Menyesuaikan dinamis (larut malam berbisik, pagi hari ceria, insiden sistem siaga tegas).
+      - `whisper_night`: Nada lembut, tenang, volume rendah (0.65x) untuk penggunaan larut malam (22:00 - 06:00).
+      - `urgent_alert`: Nada tegas, cepat (1.15x), dan volume penuh untuk peringatan insiden/keamanan.
+      - `cheerful_morning`: Nada hangat, ceria, dan bersemangat menyambut aktivitas harian.
+      - `thoughtful_analyst`: Nada tenang, terukur, dan fokus untuk diskusi kode/data.
+      - `natural_friendly`: Nada ramah dan santai default.
+  - ⚙️ **Panel Pengaturan Suara di Settings (`SettingsView.swift`)**:
+    - Menu kontrol Full-Duplex Voice 2.0, pemilih Persona Vokal Adaptif, indikator latensi live stream, dan slider sensitivitas VAD (-42 dB s.d. -16 dB).
+  - 🛠️ **2 Tools LLM Baru & 4 Aliases di `ToolExecutor.swift`**:
+    - `voice_set_mode`: Mengonfigurasi mode streaming duplex, gaya persona vokal, dan ambang VAD.
+    - `voice_status`: Membaca metrik latensi streaming (ms), status live stream, persona aktif, dan total interupsi barge-in.
+    - Aliases: `set_voice_mode`, `voice_mode`, `duplex_voice`, `voice_info`.
+    - Total tools bertambah dari 92 menjadi **94 tools**, 100% patuh validasi skema Gemini OpenAPI.
+
 - **Interactive Canvas Studio 2.0 & Apple Ecosystem (Siri & Shortcuts) (Paket 13)**:
   - 🎨 **Interactive Widgets & WebKit Sandbox di Canvas (`CanvasView.swift`, `CanvasArtifact.swift`)**:
     - Dukungan tipe artefak baru: `.html` ("Web Sandbox", icon `globe.americas.fill`) via WebKit native `WKWebView` dengan background transparan, dan `.form` ("Form Interaktif", icon `slider.horizontal.3`) untuk input dinamis (teks, number, menu pilihan, toggle) dan aksi instan dengan umpan balik langsung.

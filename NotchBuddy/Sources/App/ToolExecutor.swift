@@ -119,6 +119,7 @@ final class ToolExecutor: @unchecked Sendable {
         sentryEnableAwayModeDef, sentryCheckStatusDef, sentryScanWifiIntrudersDef,
         sentryTrustDeviceDef, sentryAutohealCheckDef,
         shortcutsListShortcutsDef, shortcutsRunShortcutDef, canvasPresentWidgetDef,
+        voiceSetModeDef, voiceStatusDef,
     ]
 
     /// Semua alat yang tersedia termasuk alat dinamis yang disintesis on-the-fly.
@@ -1289,6 +1290,28 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    static let voiceSetModeDef = LLMToolDef(
+        name: "voice_set_mode",
+        description: "Mengatur mode suara asisten: mengaktifkan/menonaktifkan Full-Duplex Live Streaming, mengatur gaya persona vokal adaptif (whisper_night, urgent_alert, cheerful_morning, thoughtful_analyst, natural_friendly, adaptive_auto), dan sensitivitas VAD.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "streaming": .object(["type": .string("boolean"), "description": .string("Aktifkan atau nonaktifkan continuous duplex streaming (opsional).")]),
+                "persona_style": .object(["type": .string("string"), "description": .string("Gaya persona vokal: 'adaptive_auto', 'whisper_night', 'urgent_alert', 'cheerful_morning', 'thoughtful_analyst', 'natural_friendly' (opsional).")]),
+                "vad_sensitivity": .object(["type": .string("number"), "description": .string("Sensitivitas ambang deteksi suara dalam dB (misal: -28.0) (opsional).")]),
+            ]),
+        ])
+    )
+
+    static let voiceStatusDef = LLMToolDef(
+        name: "voice_status",
+        description: "Melihat status lengkap engine suara: mode duplex active, persona vokal yang sedang digunakan, latensi respons streaming audio (ms), sensitivitas VAD, dan jumlah interupsi alami (barge-in).",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
     static let officeListSheetsDef = LLMToolDef(
         name: "office_list_sheets",
         description: "List all worksheet/tab names in the active Microsoft Excel or Numbers workbook.",
@@ -1574,6 +1597,10 @@ final class ToolExecutor: @unchecked Sendable {
         "execute_shortcut": "shortcuts_run_shortcut",
         "show_canvas": "canvas_present_widget",
         "open_canvas": "canvas_present_widget",
+        "set_voice_mode": "voice_set_mode",
+        "voice_mode": "voice_set_mode",
+        "duplex_voice": "voice_set_mode",
+        "voice_info": "voice_status",
     ]
 
     /// Short, human-readable target for UI events and audit records.
@@ -1673,6 +1700,8 @@ final class ToolExecutor: @unchecked Sendable {
         case "shortcuts_list_shortcuts": raw = input["filter"]?.stringValue ?? "all shortcuts"
         case "shortcuts_run_shortcut":  raw = input["name"]?.stringValue
         case "canvas_present_widget":   raw = input["title"]?.stringValue
+        case "voice_set_mode":          raw = input["persona_style"]?.stringValue ?? "voice_set"
+        case "voice_status":            raw = "voice_status"
         default:               raw = nil
         }
         let value = raw?.isEmpty == false ? raw! : name
@@ -1810,6 +1839,8 @@ final class ToolExecutor: @unchecked Sendable {
         case "shortcuts_list_shortcuts": category = .read;  target = "apple_shortcuts"
         case "shortcuts_run_shortcut":  category = .shell; target = input["name"]?.stringValue ?? "shortcut"
         case "canvas_present_widget":   category = .read;  target = input["title"]?.stringValue ?? "canvas_widget"
+        case "voice_set_mode":          category = .appControl; target = input["persona_style"]?.stringValue ?? "voice_set_mode"
+        case "voice_status":            category = .read;  target = "voice_status"
         default:
             if let dyn = DynamicToolSynthesizer.shared.getTool(id: name) {
                 category = .shell
@@ -2290,6 +2321,53 @@ final class ToolExecutor: @unchecked Sendable {
             return ToolResult(output: out, isError: !ok)
         case "canvas_present_widget":
             return await runCanvasPresentWidget(input: input)
+        case "voice_set_mode":
+            let changes = await MainActor.run { () -> [String] in
+                var list: [String] = []
+                if let streaming = input["streaming"]?.boolValue {
+                    if streaming {
+                        RealtimeVoiceStreamService.shared.startLiveStream()
+                        list.append("Streaming duplex diaktifkan")
+                    } else {
+                        RealtimeVoiceStreamService.shared.stopLiveStream()
+                        list.append("Streaming duplex dinonaktifkan")
+                    }
+                }
+                if let styleStr = input["persona_style"]?.stringValue,
+                   let style = VocalPersonaStyle(rawValue: styleStr) {
+                    RealtimeVoiceStreamService.shared.selectedPersonaStyle = style
+                    list.append("Gaya persona diatur ke '\(style.displayName)'")
+                }
+                if let vad = input["vad_sensitivity"]?.numberValue {
+                    RealtimeVoiceStreamService.shared.vadSensitivity = vad
+                    list.append("Sensitivitas VAD diatur ke \(Int(vad)) dB")
+                }
+                return list
+            }
+            let resMsg = changes.isEmpty ? "Tidak ada perubahan mode suara yang diminta." : changes.joined(separator: ", ")
+            return ToolResult(output: "Konfigurasi suara berhasil diperbarui: \(resMsg)")
+        case "voice_status":
+            let msg = await MainActor.run { () -> String in
+                let svc = RealtimeVoiceStreamService.shared
+                let status = svc.status.displayName
+                let activeStyle = svc.resolveActiveStyle().displayName
+                let selected = svc.selectedPersonaStyle.displayName
+                let lat = svc.measuredLatencyMs
+                let barge = svc.totalBargeInsCount
+                let vad = Int(svc.vadSensitivity)
+                let isSpeaking = VoiceManager.shared.isSpeaking ? "Sedang berbicara" : "Diam / Siap"
+                return """
+                🎙️ Status Real-Time Voice Duplex 2.0:
+                • Status Live Stream: \(status)
+                • Gaya Vokal Terpilih: \(selected)
+                • Gaya Vokal Aktif (Konteks): \(activeStyle)
+                • Sensitivitas VAD: \(vad) dB
+                • Estimasi Latensi Streaming: ~\(lat) ms (Target: < 400ms)
+                • Total Interupsi Alami (Barge-In): \(barge) kali
+                • Status Asisten: \(isSpeaking)
+                """
+            }
+            return ToolResult(output: msg)
         default:
             if let _ = DynamicToolSynthesizer.shared.getTool(id: name) {
                 var args: [String: String] = [:]

@@ -705,10 +705,10 @@ struct SettingsView: View {
             }
 
             // Duplex & Intonasi
-            GroupBox("Natural Duplex & Interupsi Spontan (Barge-In)") {
+            GroupBox("Full-Duplex Voice 2.0 & Interupsi Alami (Barge-In)") {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Toggle("Aktifkan Voice Duplex (Interupsi Alami)", isOn: Binding(
+                        Toggle("Aktifkan Voice Duplex 2.0 (Conversational Live Stream)", isOn: Binding(
                             get: { VoiceDuplexEngine.shared.isDuplexActive },
                             set: { on in
                                 if on {
@@ -722,29 +722,53 @@ struct SettingsView: View {
                         if VoiceDuplexEngine.shared.isDuplexActive {
                             HStack(spacing: 4) {
                                 Circle().fill(Color.green).frame(width: 7, height: 7)
-                                Text("Duplex Aktif")
-                                    .font(.system(size: 10))
+                                Text("Live Stream (< \(RealtimeVoiceStreamService.shared.measuredLatencyMs)ms)")
+                                    .font(.system(size: 10, weight: .semibold))
                                     .foregroundColor(.green)
                             }
                         }
                     }
-                    Text("Anda dapat menyela pembicaraan asisten secara instan cukup dengan mulai berbicara tanpa menunggu bot selesai.")
+                    Text("Pengalaman percakapan dua arah sub-detik. Anda dapat menyela pembicaraan asisten secara instan (<50ms) cukup dengan mulai berbicara.")
                         .font(.system(size: 10.5))
                         .foregroundColor(.secondary)
 
-                    HStack(spacing: 8) {
-                        Text("Intonasi Emosi Suara:")
-                            .font(.system(size: 11))
-                        Picker("", selection: Binding(
-                            get: { VoiceDuplexEngine.shared.emotionalTone },
-                            set: { VoiceDuplexEngine.shared.setTone($0) }
-                        )) {
-                            Text("Attentive (Ramah & Hangat)").tag(VoiceDuplexEngine.EmotionalTone.attentive)
-                            Text("Focused (Fokus Kerja Cepat)").tag(VoiceDuplexEngine.EmotionalTone.focused)
-                            Text("Caution (Peringatan & Tegas)").tag(VoiceDuplexEngine.EmotionalTone.caution)
+                    Divider().opacity(0.3)
+
+                    // Gaya Persona Vokal Adaptif Konteks
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text("Gaya Persona Vokal:")
+                                .font(.system(size: 11, weight: .medium))
+                            Picker("", selection: Binding(
+                                get: { RealtimeVoiceStreamService.shared.selectedPersonaStyle },
+                                set: { RealtimeVoiceStreamService.shared.selectedPersonaStyle = $0 }
+                            )) {
+                                ForEach(VocalPersonaStyle.allCases, id: \.self) { style in
+                                    Text(style.displayName).tag(style)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 240)
                         }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: 200)
+
+                        Text("Gaya aktif saat ini: \(RealtimeVoiceStreamService.shared.resolveActiveStyle().displayName) — \(RealtimeVoiceStreamService.shared.selectedPersonaStyle.description)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    // Sensitivitas VAD
+                    HStack(spacing: 8) {
+                        Text("Sensitivitas VAD:")
+                            .font(.system(size: 11))
+                            .frame(width: 100, alignment: .leading)
+                        Slider(value: Binding(
+                            get: { RealtimeVoiceStreamService.shared.vadSensitivity },
+                            set: { RealtimeVoiceStreamService.shared.vadSensitivity = $0 }
+                        ), in: -42.0...(-16.0), step: 1.0)
+                        Text("\(Int(RealtimeVoiceStreamService.shared.vadSensitivity)) dB")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .frame(width: 48, alignment: .trailing)
                     }
                 }
                 .padding(6)

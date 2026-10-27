@@ -38,6 +38,7 @@ public final class VoiceDuplexEngine: ObservableObject {
 
             await MainActor.run {
                 self.setupAndStartEngine()
+                RealtimeVoiceStreamService.shared.startLiveStream()
             }
         }
     }
@@ -81,6 +82,7 @@ public final class VoiceDuplexEngine: ObservableObject {
         }
         audioEngine = nil
         isDuplexActive = false
+        RealtimeVoiceStreamService.shared.stopLiveStream()
     }
 
     /// Callback audio nonisolated agar tidak memeriksa MainActor di thread CoreAudio.

@@ -141,9 +141,11 @@ final class VoiceManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegat
     }
 
     private func speakSystem(_ text: String) {
+        let profile = RealtimeVoiceStreamService.shared.resolveCurrentAudioProfile()
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
-        utterance.pitchMultiplier = 1.08 // Mochi: slightly warm/young
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * profile.rateMultiplier
+        utterance.pitchMultiplier = profile.pitchMultiplier
+        utterance.volume = profile.volumeMultiplier
         if let language = Self.voiceLanguage(for: text) {
             utterance.voice = AVSpeechSynthesisVoice(language: language)
         }
