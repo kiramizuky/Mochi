@@ -220,7 +220,7 @@ struct GeminiProvider: LLMProvider {
                 [
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.inputSchema.anyValue,
+                    "parameters": Self.sanitizeSchemaForGemini(tool.inputSchema.anyValue),
                 ]
             }
             body["tools"] = [["functionDeclarations": declarations]]
@@ -228,6 +228,37 @@ struct GeminiProvider: LLMProvider {
             body["tools"] = [["googleSearch": [String: Any]()]]
         }
         return body
+    }
+
+    /// Membersihkan skema OpenAPI agar selalu valid sesuai spesifikasi Google Gemini API.
+    /// Gemini mewajibkan field `items` untuk semua property bertipe `array` / `ARRAY`.
+    static func sanitizeSchemaForGemini(_ schema: Any) -> Any {
+        guard var dict = schema as? [String: Any] else {
+            if let arr = schema as? [Any] {
+                return arr.map { sanitizeSchemaForGemini($0) }
+            }
+            return schema
+        }
+
+        // 1. Cek apakah bertipe array, dan pastikan field `items` tersedia
+        if let typeStr = dict["type"] as? String, typeStr.lowercased() == "array" {
+            if dict["items"] == nil {
+                dict["items"] = ["type": "string"]
+            } else if let itemsObj = dict["items"] {
+                dict["items"] = sanitizeSchemaForGemini(itemsObj)
+            }
+        }
+
+        // 2. Rekursif sanitasi sub-properties
+        if let properties = dict["properties"] as? [String: Any] {
+            var newProps: [String: Any] = [:]
+            for (key, val) in properties {
+                newProps[key] = sanitizeSchemaForGemini(val)
+            }
+            dict["properties"] = newProps
+        }
+
+        return dict
     }
 
     // MARK: - Response parsing

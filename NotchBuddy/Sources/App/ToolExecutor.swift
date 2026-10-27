@@ -789,7 +789,11 @@ final class ToolExecutor: @unchecked Sendable {
                 "description": .object(["type": .string("string"), "description": .string("Penjelasan kegunaan dan input/output alat.")]),
                 "language": .object(["type": .string("string"), "description": .string("Bahasa pemrograman: 'bash', 'python', 'swift', atau 'javascript'.")]),
                 "script_source": .object(["type": .string("string"), "description": .string("Kode sumber lengkap script yang siap dieksekusi/dikompilasi.")]),
-                "parameter_names": .object(["type": .string("array"), "description": .string("Daftar nama parameter input yang diterima script.")]),
+                "parameter_names": .object([
+                    "type": .string("array"),
+                    "description": .string("Daftar nama parameter input yang diterima script."),
+                    "items": .object(["type": .string("string")])
+                ]),
             ]),
             "required": .array([.string("id"), .string("name"), .string("script_source")]),
         ])
