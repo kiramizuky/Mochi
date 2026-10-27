@@ -15,6 +15,13 @@ struct ToolResult: Sendable, Equatable {
     var exitCode: Int?
     /// Visual context (app screenshots), sent as a separate image message.
     var image: ToolImage? = nil
+
+    init(output: String, isError: Bool = false, exitCode: Int? = nil, image: ToolImage? = nil) {
+        self.output = output
+        self.isError = isError
+        self.exitCode = exitCode
+        self.image = image
+    }
 }
 
 /// Runs the thirteen agent tools on the Mac. Every call passes through
@@ -99,6 +106,10 @@ final class ToolExecutor: @unchecked Sendable {
         nightShiftRunDef,
         playbookListDef, playbookRunDef,
         toolSynthesizeDef, toolListDynamicDef, toolRunDynamicDef,
+        laptopSecurityAuditDef, networkScanLanDef, networkDiagnosticsDef,
+        cameraCapturePhotoDef, cameraAnalyzeDef,
+        faceEnrollOwnerDef, faceVerifyPresenceDef,
+        cctvListCamerasDef, cctvGetSnapshotDef, cctvAddCameraDef,
     ]
 
     /// Semua alat yang tersedia termasuk alat dinamis yang disintesis on-the-fly.
@@ -821,6 +832,115 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    // MARK: - Network & Security Sentinel (Paket 5)
+    static let laptopSecurityAuditDef = LLMToolDef(
+        name: "laptop_security_audit",
+        description: "Audit keamanan laptop macOS secara menyeluruh (Firewall, FileVault, SIP, Gatekeeper, port terbuka, dan skor kesehatan keamanan). Mengembalikan ringkasan markdown dan memuat laporan visual di Canvas.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    static let networkScanLanDef = LLMToolDef(
+        name: "network_scan_lan",
+        description: "Pindai jaringan Wi-Fi/LAN lokal untuk mendeteksi semua perangkat yang terhubung (IP, MAC address, hostname, dan estimasi tipe perangkat seperti HP, router, CCTV, TV, laptop).",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    static let networkDiagnosticsDef = LLMToolDef(
+        name: "network_diagnostics",
+        description: "Lakukan diagnostik jaringan lengkap: latensi ping ke host tujuan, kecepatan resolusi DNS, dan deteksi IP publik.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "target_host": .object(["type": .string("string"), "description": .string("Host atau IP tujuan ping (opsional, default: 1.1.1.1).")]),
+            ]),
+        ])
+    )
+
+    // MARK: - Webcam Visual Perception (Paket 6)
+    static let cameraCapturePhotoDef = LLMToolDef(
+        name: "camera_capture_photo",
+        description: "Ambil foto menggunakan kamera / FaceTime HD bawaan MacBook secara instan dan simpan ke file sementara. Kamera langsung dimatikan setelah pengambilan foto (privasi terjamin).",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    static let cameraAnalyzeDef = LLMToolDef(
+        name: "camera_analyze",
+        description: "Ambil foto dari webcam MacBook dan analisis objek, ekspresi, teks, atau lingkungan sekitar di depan kamera.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "prompt": .object(["type": .string("string"), "description": .string("Pertanyaan atau hal spesifik yang ingin dianalisis dari pandangan webcam (opsional).")]),
+            ]),
+        ])
+    )
+
+    // MARK: - Face Recognition & Presence Guard (Paket 7)
+    static let faceEnrollOwnerDef = LLMToolDef(
+        name: "face_enroll_owner",
+        description: "Daftarkan wajah pemilik MacBook menggunakan kamera webcam untuk pengenalan wajah on-device (Apple Neural Engine). Membutuhkan pengguna berada di depan webcam.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    static let faceVerifyPresenceDef = LLMToolDef(
+        name: "face_verify_presence",
+        description: "Verifikasi kehadiran pemilik di depan laptop dan deteksi apakah ada orang lain di dekat layar yang berpotensi mengintip (peeking alert).",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    // MARK: - CCTV RTSP & IoT Streamer (Paket 8)
+    static let cctvListCamerasDef = LLMToolDef(
+        name: "cctv_list_cameras",
+        description: "Daftar semua kamera CCTV / IP kamera yang telah terkonfigurasi di Mochi.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    static let cctvGetSnapshotDef = LLMToolDef(
+        name: "cctv_get_snapshot",
+        description: "Ambil gambar snapshot dari kamera CCTV (berdasarkan ID kamera, nama kamera, atau direct HTTP/RTSP URL) dan tampilkan di Canvas Mochi.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "camera_identifier": .object(["type": .string("string"), "description": .string("Nama, ID, atau URL stream RTSP/HTTP kamera CCTV target.")]),
+            ]),
+            "required": .array([.string("camera_identifier")]),
+        ])
+    )
+
+    static let cctvAddCameraDef = LLMToolDef(
+        name: "cctv_add_camera",
+        description: "Tambahkan atau perbarui konfigurasi kamera CCTV baru ke dalam Mochi.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object(["type": .string("string"), "description": .string("Nama kamera (contoh: 'Kamera Pintu Depan', 'Garasi').")]),
+                "stream_url": .object(["type": .string("string"), "description": .string("URL RTSP atau HTTP stream kamera (contoh: rtsp://192.168.1.100:554/live).")]),
+                "location": .object(["type": .string("string"), "description": .string("Lokasi kamera (contoh: 'Pintu Depan', 'Kantor').")]),
+                "snapshot_url": .object(["type": .string("string"), "description": .string("Direct HTTP JPEG snapshot URL jika ada (opsional).")]),
+                "username": .object(["type": .string("string"), "description": .string("Username autentikasi kamera (opsional).")]),
+                "password": .object(["type": .string("string"), "description": .string("Password autentikasi kamera (opsional).")]),
+            ]),
+            "required": .array([.string("name"), .string("stream_url")]),
+        ])
+    )
+
     static let officeListSheetsDef = LLMToolDef(
         name: "office_list_sheets",
         description: "List all worksheet/tab names in the active Microsoft Excel or Numbers workbook.",
@@ -1023,10 +1143,39 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    // MARK: - Tool Aliases & Self-Healing Resilience
+    private static let toolAliases: [String: String] = [
+        "check_security": "laptop_security_audit",
+        "audit_security": "laptop_security_audit",
+        "laptop_security": "laptop_security_audit",
+        "security_audit": "laptop_security_audit",
+        "scan_wifi": "network_scan_lan",
+        "scan_network": "network_scan_lan",
+        "lan_scan": "network_scan_lan",
+        "wifi_scan": "network_scan_lan",
+        "ping": "network_diagnostics",
+        "check_network": "network_diagnostics",
+        "webcam_capture": "camera_capture_photo",
+        "take_photo": "camera_capture_photo",
+        "capture_photo": "camera_capture_photo",
+        "camera_snapshot": "camera_capture_photo",
+        "webcam_analyze": "camera_analyze",
+        "see_webcam": "camera_analyze",
+        "face_register": "face_enroll_owner",
+        "enroll_face": "face_enroll_owner",
+        "verify_face": "face_verify_presence",
+        "face_check": "face_verify_presence",
+        "presence_guard": "face_verify_presence",
+        "cctv_snapshot": "cctv_get_snapshot",
+        "cctv_capture": "cctv_get_snapshot",
+        "get_cctv": "cctv_get_snapshot",
+    ]
+
     /// Short, human-readable target for UI events and audit records.
     static func targetDescription(name: String, input: JSONValue) -> String {
+        let actualName = toolAliases[name] ?? name
         let raw: String?
-        switch name {
+        switch actualName {
         case "shell_run":      raw = input["command"]?.stringValue
         case "file_read":      raw = input["path"]?.stringValue
         case "file_write":     raw = input["path"]?.stringValue
@@ -1082,6 +1231,16 @@ final class ToolExecutor: @unchecked Sendable {
         case "tool_synthesize":       raw = input["id"]?.stringValue
         case "tool_list_dynamic":     raw = "all dynamic tools"
         case "tool_run_dynamic":      raw = input["id"]?.stringValue
+        case "laptop_security_audit": raw = "security audit"
+        case "network_scan_lan":      raw = "lan scan"
+        case "network_diagnostics":   raw = input["target_host"]?.stringValue ?? "diagnostics"
+        case "camera_capture_photo":  raw = "webcam snapshot"
+        case "camera_analyze":        raw = input["prompt"]?.stringValue ?? "webcam analyze"
+        case "face_enroll_owner":     raw = "face enroll"
+        case "face_verify_presence":  raw = "face presence check"
+        case "cctv_list_cameras":     raw = "list cctv"
+        case "cctv_get_snapshot":     raw = input["camera_identifier"]?.stringValue
+        case "cctv_add_camera":       raw = input["name"]?.stringValue
         default:               raw = nil
         }
         let value = raw?.isEmpty == false ? raw! : name
@@ -1101,10 +1260,11 @@ final class ToolExecutor: @unchecked Sendable {
     // MARK: - Execute
 
     func execute(name: String, input: JSONValue) async -> ToolResult {
+        let actualName = Self.toolAliases[name] ?? name
         let category: ActionCategory
         let target: String?
         var axAction: AXAction? = nil
-        switch name {
+        switch actualName {
         case "shell_run":       category = .shell;      target = input["command"]?.stringValue
         case "file_read":       category = .read;       target = input["path"]?.stringValue
         case "file_write":      category = .fileWrite;  target = input["path"]?.stringValue
@@ -1183,6 +1343,16 @@ final class ToolExecutor: @unchecked Sendable {
         case "tool_synthesize": category = .fileWrite; target = input["id"]?.stringValue
         case "tool_list_dynamic": category = .read; target = "list"
         case "tool_run_dynamic": category = .shell; target = input["id"]?.stringValue
+        case "laptop_security_audit": category = .read; target = "security audit"
+        case "network_scan_lan":      category = .network; target = "lan scan"
+        case "network_diagnostics":   category = .network; target = input["target_host"]?.stringValue ?? "diagnostics"
+        case "camera_capture_photo":  category = .appControl; target = "webcam"
+        case "camera_analyze":        category = .appControl; target = "webcam analyze"
+        case "face_enroll_owner":     category = .appControl; target = "face enroll"
+        case "face_verify_presence":  category = .appControl; target = "face presence"
+        case "cctv_list_cameras":     category = .read; target = "list cctv"
+        case "cctv_get_snapshot":     category = .network; target = input["camera_identifier"]?.stringValue
+        case "cctv_add_camera":       category = .fileWrite; target = input["name"]?.stringValue
         default:
             if let dyn = DynamicToolSynthesizer.shared.getTool(id: name) {
                 category = .shell
@@ -1196,26 +1366,26 @@ final class ToolExecutor: @unchecked Sendable {
 
         // app_list reads the window list and ax_read reads the UI tree: neither
         // takes a required argument, so both may run with no target at all.
-        let requiresTarget = name != "app_list" && name != "ax_read" && name != "window_list"
+        let requiresTarget = actualName != "app_list" && actualName != "ax_read" && actualName != "window_list"
         guard !requiresTarget || target?.isEmpty == false else {
-            audit.record(category: category, action: name, target: "", decision: .deny,
+            audit.record(category: category, action: actualName, target: "", decision: .deny,
                          reason: "missing argument")
-            return ToolResult(output: "Missing required argument for \(name).", isError: true, exitCode: nil)
+            return ToolResult(output: "Missing required argument for \(actualName).", isError: true, exitCode: nil)
         }
         let resolvedTarget = target ?? ""
 
         // memory_save audits the fact itself but never runs its text through
         // the hard floor: a remembered fact containing "sudo" must not be
         // mistaken for a shell command.
-        let policyCommand = name == "memory_save"
+        let policyCommand = actualName == "memory_save"
             ? "memory_save"
-            : (resolvedTarget.isEmpty ? name : resolvedTarget)
+            : (resolvedTarget.isEmpty ? actualName : resolvedTarget)
         let action = PolicyAction(category: category, command: policyCommand)
         let verdict = evaluate(action)
 
         switch verdict.decision {
         case .deny:
-            audit.record(category: category, action: name, target: resolvedTarget, decision: .deny,
+            audit.record(category: category, action: actualName, target: resolvedTarget, decision: .deny,
                          reason: verdict.reason)
             return ToolResult(output: "Blocked by policy: \(verdict.reason ?? "denied")",
                               isError: true, exitCode: nil)
@@ -1224,10 +1394,10 @@ final class ToolExecutor: @unchecked Sendable {
             let approved = await confirmHandler(action)
             if approved {
                 confirm(category)
-                audit.record(category: category, action: name, target: resolvedTarget, decision: .allow,
+                audit.record(category: category, action: actualName, target: resolvedTarget, decision: .allow,
                              reason: "user approved")
             } else {
-                audit.record(category: category, action: name, target: resolvedTarget, decision: .deny,
+                audit.record(category: category, action: actualName, target: resolvedTarget, decision: .deny,
                              reason: "denied by user")
                 return ToolResult(output: "Denied by the user.", isError: true, exitCode: nil)
             }
@@ -1236,8 +1406,8 @@ final class ToolExecutor: @unchecked Sendable {
             break
         }
 
-        let result = await run(name: name, input: input, target: resolvedTarget, axAction: axAction)
-        audit.record(category: category, action: name, target: resolvedTarget, decision: .allow,
+        let result = await run(name: actualName, input: input, target: resolvedTarget, axAction: axAction)
+        audit.record(category: category, action: actualName, target: resolvedTarget, decision: .allow,
                      exitCode: result.exitCode)
         return result
     }
@@ -1394,6 +1564,85 @@ final class ToolExecutor: @unchecked Sendable {
             return runToolListDynamic()
         case "tool_run_dynamic":
             return await runToolRunDynamic(input: input)
+        case "laptop_security_audit":
+            let report = await NetworkSecurityService.shared.auditLaptopSecurity()
+            return ToolResult(output: report.summaryMarkdown)
+        case "network_scan_lan":
+            let report = await NetworkSecurityService.shared.scanLocalNetwork()
+            return ToolResult(output: report.summaryText)
+        case "network_diagnostics":
+            let host = input["target_host"]?.stringValue
+            let report = await NetworkSecurityService.shared.runDiagnostics(targetHost: host)
+            return ToolResult(output: report.summaryText)
+        case "camera_capture_photo":
+            do {
+                let res = try await WebcamCaptureService.shared.capturePhoto()
+                let out = "Foto webcam berhasil diambil dan disimpan ke `\(res.filePath)` (Resolusi: \(res.width)x\(res.height) px, Wajah terdeteksi: \(res.detectedFacesCount))."
+                return ToolResult(output: out)
+            } catch {
+                return ToolResult(output: "Gagal mengambil foto webcam: \(error.localizedDescription)", isError: true)
+            }
+        case "camera_analyze":
+            do {
+                let prompt = input["prompt"]?.stringValue
+                let report = try await WebcamCaptureService.shared.captureAndAnalyze(prompt: prompt)
+                return ToolResult(output: report)
+            } catch {
+                return ToolResult(output: "Gagal menganalisis kamera: \(error.localizedDescription)", isError: true)
+            }
+        case "face_enroll_owner":
+            do {
+                let capture = try await WebcamCaptureService.shared.capturePhoto()
+                let enrollRes = try await FaceRecognitionService.shared.enrollOwnerFace(imageData: capture.data)
+                return ToolResult(output: enrollRes.message, isError: !enrollRes.isSuccess)
+            } catch {
+                return ToolResult(output: "Gagal mendaftarkan wajah: \(error.localizedDescription)", isError: true)
+            }
+        case "face_verify_presence":
+            do {
+                let capture = try await WebcamCaptureService.shared.capturePhoto()
+                let verifyRes = try await FaceRecognitionService.shared.verifyFace(in: capture.data)
+                return ToolResult(output: verifyRes.message)
+            } catch {
+                return ToolResult(output: "Gagal memverifikasi wajah: \(error.localizedDescription)", isError: true)
+            }
+        case "cctv_list_cameras":
+            let cameras = CCTVGatewayService.shared.listCameras()
+            if cameras.isEmpty {
+                return ToolResult(output: "Belum ada kamera CCTV yang terkonfigurasi. Tambahkan menggunakan tool `cctv_add_camera` atau melalui Pengaturan.")
+            }
+            let list = cameras.map { "• \($0.name) (\($0.location)) - URL: `\($0.streamUrl)`" }.joined(separator: "\n")
+            return ToolResult(output: "Daftar Kamera CCTV Terdaftar:\n\(list)")
+        case "cctv_get_snapshot":
+            guard let id = input["camera_identifier"]?.stringValue, !id.isEmpty else {
+                return ToolResult(output: "Harap berikan 'camera_identifier' (ID, nama, atau URL kamera).", isError: true)
+            }
+            do {
+                let (_, _, summary) = try await CCTVGatewayService.shared.captureSnapshot(cameraIdentifier: id)
+                return ToolResult(output: summary)
+            } catch {
+                return ToolResult(output: "Gagal mengambil snapshot CCTV: \(error.localizedDescription)", isError: true)
+            }
+        case "cctv_add_camera":
+            guard let name = input["name"]?.stringValue, !name.isEmpty,
+                  let streamUrl = input["stream_url"]?.stringValue, !streamUrl.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'name' dan 'stream_url'.", isError: true)
+            }
+            let location = input["location"]?.stringValue ?? "Utama"
+            let snapshotUrl = input["snapshot_url"]?.stringValue
+            let username = input["username"]?.stringValue
+            let password = input["password"]?.stringValue
+
+            let config = CCTVCameraConfig(
+                name: name,
+                location: location,
+                streamUrl: streamUrl,
+                snapshotUrl: snapshotUrl,
+                username: username,
+                password: password
+            )
+            CCTVGatewayService.shared.addOrUpdateCamera(config)
+            return ToolResult(output: "Kamera CCTV '\(name)' (\(location)) berhasil ditambahkan dan disimpan.")
         default:
             if let _ = DynamicToolSynthesizer.shared.getTool(id: name) {
                 var args: [String: String] = [:]

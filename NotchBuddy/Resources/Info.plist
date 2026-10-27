@@ -26,6 +26,8 @@
 	<string>Mochi Assistant memerlukan akses aksesibilitas untuk membaca konteks jendela aktif dan membantu otomatisasi antarmuka.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Mochi Assistant memerlukan izin AppleEvents untuk mengontrol aplikasi sistem dan terminal.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Mochi Assistant memerlukan akses kamera untuk persepsi visual on-demand dan verifikasi wajah pemilik (Presence Guard).</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>

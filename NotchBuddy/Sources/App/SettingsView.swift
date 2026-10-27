@@ -98,6 +98,15 @@ struct SettingsView: View {
     @AppStorage("fileSystemWatcherEnabled") private var fileSystemWatcherEnabled: Bool = true
     @AppStorage("clipboardWatcherEnabled") private var clipboardWatcherEnabled: Bool = true
 
+    // Visual Perception, Face & CCTV
+    @State private var isEnrollingFace: Bool = false
+    @State private var faceEnrollmentStatus: Bool = FaceRecognitionService.shared.isOwnerEnrolled
+    @State private var cctvCamerasList: [CCTVCameraConfig] = CCTVGatewayService.shared.listCameras()
+    @State private var newCCTVName: String = ""
+    @State private var newCCTVLocation: String = ""
+    @State private var newCCTVUrl: String = ""
+    @State private var isTestingCCTV: Bool = false
+
     // Dynamic Tools
     @State private var dynamicToolsList: [DynamicTool] = DynamicToolSynthesizer.shared.allTools
     @State private var toolTestResult: String = ""
@@ -1135,6 +1144,141 @@ struct SettingsView: View {
                         .padding(.vertical, 3)
                         Divider()
                     }
+                }
+                .padding(6)
+            }
+
+            // Visual Perception & Face Recognition
+            GroupBox("Persepsi Visual & Biometrik Wajah (Apple Neural Engine)") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: faceEnrollmentStatus ? "faceid" : "person.crop.circle.badge.exclamationmark")
+                            .font(.system(size: 16))
+                            .foregroundColor(faceEnrollmentStatus ? .green : .orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(faceEnrollmentStatus ? "Wajah Pemilik Terdaftar ✓" : "Wajah Pemilik Belum Terdaftar")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(faceEnrollmentStatus
+                                 ? "Presence Guard aktif: Mochi menyapa saat Anda datang dan memperingatkan jika ada pengintip layar."
+                                 : "Daftarkan wajah Anda agar Mochi mengenali Anda saat kembali ke MacBook dan memproteksi layar.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if faceEnrollmentStatus {
+                            Button("Reset Wajah") {
+                                FaceRecognitionService.shared.resetOwnerFace()
+                                faceEnrollmentStatus = false
+                                statusMessage = "Data wajah berhasil dihapus."
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        } else {
+                            Button(isEnrollingFace ? "Mengambil Foto..." : "Daftarkan Wajah") {
+                                isEnrollingFace = true
+                                Task {
+                                    do {
+                                        let capture = try await WebcamCaptureService.shared.capturePhoto()
+                                        let enroll = try await FaceRecognitionService.shared.enrollOwnerFace(imageData: capture.data)
+                                        await MainActor.run {
+                                            isEnrollingFace = false
+                                            faceEnrollmentStatus = enroll.isSuccess
+                                            statusMessage = enroll.message
+                                        }
+                                    } catch {
+                                        await MainActor.run {
+                                            isEnrollingFace = false
+                                            statusMessage = "Gagal: \(error.localizedDescription)"
+                                        }
+                                    }
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .disabled(isEnrollingFace)
+                        }
+                    }
+                }
+                .padding(6)
+            }
+
+            // CCTV & IP Camera Gateway
+            GroupBox("Pemantauan CCTV & IP Camera (RTSP / ONVIF)") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Kelola kamera CCTV rumah/kantor untuk pemantauan cerdas langsung di Canvas.")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(.secondary)
+
+                    if cctvCamerasList.isEmpty {
+                        Text("Belum ada kamera CCTV yang terdaftar.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 2)
+                    } else {
+                        ForEach(cctvCamerasList) { cam in
+                            HStack(spacing: 8) {
+                                Image(systemName: "video.fill")
+                                    .foregroundColor(.accentColor)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("\(cam.name) (\(cam.location))")
+                                        .font(.system(size: 11, weight: .semibold))
+                                    Text(cam.streamUrl)
+                                        .font(.system(size: 9.5))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Button("Hapus") {
+                                    CCTVGatewayService.shared.removeCamera(id: cam.id)
+                                    cctvCamerasList = CCTVGatewayService.shared.listCameras()
+                                    statusMessage = "Kamera \(cam.name) dihapus."
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                            Divider()
+                        }
+                    }
+
+                    // Tambah CCTV Form
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Tambah Kamera Baru:")
+                            .font(.system(size: 10.5, weight: .medium))
+                        HStack(spacing: 6) {
+                            TextField("Nama (Pintu Depan)", text: $newCCTVName)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 10.5))
+                            TextField("Lokasi (Garasi)", text: $newCCTVLocation)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 10.5))
+                        }
+                        HStack(spacing: 6) {
+                            TextField("URL (rtsp:// atau http://snapshot)", text: $newCCTVUrl)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 10.5))
+                            Button("Simpan") {
+                                guard !newCCTVName.isEmpty, !newCCTVUrl.isEmpty else { return }
+                                let cam = CCTVCameraConfig(
+                                    name: newCCTVName,
+                                    location: newCCTVLocation.isEmpty ? "Utama" : newCCTVLocation,
+                                    streamUrl: newCCTVUrl,
+                                    snapshotUrl: newCCTVUrl.hasPrefix("http") ? newCCTVUrl : nil
+                                )
+                                CCTVGatewayService.shared.addOrUpdateCamera(cam)
+                                cctvCamerasList = CCTVGatewayService.shared.listCameras()
+                                newCCTVName = ""
+                                newCCTVLocation = ""
+                                newCCTVUrl = ""
+                                statusMessage = "Kamera \(cam.name) berhasil ditambahkan."
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .disabled(newCCTVName.isEmpty || newCCTVUrl.isEmpty)
+                        }
+                    }
+                    .padding(6)
+                    .background(Color.secondary.opacity(0.06))
+                    .cornerRadius(6)
                 }
                 .padding(6)
             }

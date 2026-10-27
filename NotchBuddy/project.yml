@@ -60,6 +60,7 @@ targets:
         NSAppleEventsUsageDescription: "Mochi Assistant memerlukan izin AppleEvents untuk mengontrol aplikasi sistem dan terminal."
         NSAccessibilityUsageDescription: "Mochi Assistant memerlukan akses aksesibilitas untuk membaca konteks jendela aktif dan membantu otomatisasi antarmuka."
         NSMicrophoneUsageDescription: "Mochi Assistant memerlukan akses mikrofon untuk mendengarkan perintah suara dan wake word."
+        NSCameraUsageDescription: "Mochi Assistant memerlukan akses kamera untuk persepsi visual on-demand dan verifikasi wajah pemilik (Presence Guard)."
         NSScreenCaptureUsageDescription: "Mochi Assistant memerlukan izin tangkapan layar untuk verifikasi visual antarmuka."
         NSSpeechRecognitionUsageDescription: "Mochi Assistant memerlukan izin pengenalan suara untuk mengubah ucapan menjadi teks perintah."
     settings:
