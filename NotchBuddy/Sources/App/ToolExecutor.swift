@@ -110,6 +110,9 @@ final class ToolExecutor: @unchecked Sendable {
         cameraCapturePhotoDef, cameraAnalyzeDef,
         faceEnrollOwnerDef, faceVerifyPresenceDef,
         cctvListCamerasDef, cctvGetSnapshotDef, cctvAddCameraDef,
+        dockerListContainersDef, dockerGetLogsDef, dockerRestartContainerDef,
+        sshListServersDef, sshServerHealthDef, sshRunCommandDef, sshTailLogDef,
+        calendarListEventsDef, reminderAddTaskDef, notesCreateNoteDef, mediaControlDef,
     ]
 
     /// Semua alat yang tersedia termasuk alat dinamis yang disintesis on-the-fly.
@@ -941,6 +944,144 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    // MARK: - Docker & Container Management
+    static let dockerListContainersDef = LLMToolDef(
+        name: "docker_list_containers",
+        description: "Daftar semua container Docker lokal (status, nama, image, port). Menampilkan tabel interaktif di Canvas.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "all": .object(["type": .string("boolean"), "description": .string("Jika true, tampilkan semua container termasuk yang berhenti (default: true).")]),
+            ]),
+        ])
+    )
+
+    static let dockerGetLogsDef = LLMToolDef(
+        name: "docker_get_logs",
+        description: "Ambil baris log output terakhir dari sebuah container Docker lokal.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "container": .object(["type": .string("string"), "description": .string("Nama atau ID container Docker.")]),
+                "tail": .object(["type": .string("integer"), "description": .string("Jumlah baris log terakhir yang diambil (default: 100).")]),
+            ]),
+            "required": .array([.string("container")]),
+        ])
+    )
+
+    static let dockerRestartContainerDef = LLMToolDef(
+        name: "docker_restart_container",
+        description: "Restart container Docker lokal berdasarkan nama atau ID container.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "container": .object(["type": .string("string"), "description": .string("Nama atau ID container Docker yang akan direstart.")]),
+            ]),
+            "required": .array([.string("container")]),
+        ])
+    )
+
+    // MARK: - Remote Server SSH Health & Gateway
+    static let sshListServersDef = LLMToolDef(
+        name: "ssh_list_servers",
+        description: "Daftar semua remote server Linux / Cloud yang telah terdaftar di Mochi.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([:]),
+        ])
+    )
+
+    static let sshServerHealthDef = LLMToolDef(
+        name: "ssh_server_health",
+        description: "Audit kesehatan server Linux jarak jauh via SSH (cek uptime, beban load average, RAM, kapasitas disk, dan systemd services). Menampilkan kartu diagnostik di Canvas.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "server_identifier": .object(["type": .string("string"), "description": .string("Nama, ID, atau host server target.")]),
+            ]),
+            "required": .array([.string("server_identifier")]),
+        ])
+    )
+
+    static let sshRunCommandDef = LLMToolDef(
+        name: "ssh_run_command",
+        description: "Jalankan perintah aman pada server Linux jarak jauh via koneksi SSH terenkripsi.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "server_identifier": .object(["type": .string("string"), "description": .string("Nama, ID, atau host server target.")]),
+                "command": .object(["type": .string("string"), "description": .string("Perintah bash yang akan dijalankan di server.")]),
+            ]),
+            "required": .array([.string("server_identifier"), .string("command")]),
+        ])
+    )
+
+    static let sshTailLogDef = LLMToolDef(
+        name: "ssh_tail_log",
+        description: "Baca baris log terakhir dari berkas log atau layanan systemd (contoh: nginx, docker, myapp) di remote server via SSH.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "server_identifier": .object(["type": .string("string"), "description": .string("Nama, ID, atau host server target.")]),
+                "log_path_or_service": .object(["type": .string("string"), "description": .string("Path file log (contoh: '/var/log/nginx/error.log') atau nama systemd unit service (contoh: 'nginx').")]),
+                "lines": .object(["type": .string("integer"), "description": .string("Jumlah baris log yang diambil (default: 50).")]),
+            ]),
+            "required": .array([.string("server_identifier"), .string("log_path_or_service")]),
+        ])
+    )
+
+    // MARK: - Apple Apps Suite
+    static let calendarListEventsDef = LLMToolDef(
+        name: "calendar_list_events",
+        description: "Baca daftar jadwal acara dan rapat dari Apple Calendar untuk hari ini atau beberapa hari ke depan.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "days_ahead": .object(["type": .string("integer"), "description": .string("Berapa hari ke depan jadwal yang akan dibaca (default: 1 untuk hari ini).")]),
+            ]),
+        ])
+    )
+
+    static let reminderAddTaskDef = LLMToolDef(
+        name: "reminder_add_task",
+        description: "Tambahkan pengingat tugas to-do baru ke aplikasi Apple Reminders.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "title": .object(["type": .string("string"), "description": .string("Judul tugas atau pengingat.")]),
+                "due_date": .object(["type": .string("string"), "description": .string("Tenggat waktu atau catatan tanggal (opsional).")]),
+                "list_name": .object(["type": .string("string"), "description": .string("Nama daftar pengingat target di Reminders (opsional, default: daftar utama).")]),
+            ]),
+            "required": .array([.string("title")]),
+        ])
+    )
+
+    static let notesCreateNoteDef = LLMToolDef(
+        name: "notes_create_note",
+        description: "Buat dan simpan catatan baru ke dalam aplikasi Apple Notes.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "title": .object(["type": .string("string"), "description": .string("Judul catatan.")]),
+                "body": .object(["type": .string("string"), "description": .string("Isi teks catatan.")]),
+                "folder_name": .object(["type": .string("string"), "description": .string("Nama folder di Apple Notes (opsional, default: Notes).")]),
+            ]),
+            "required": .array([.string("title"), .string("body")]),
+        ])
+    )
+
+    static let mediaControlDef = LLMToolDef(
+        name: "media_control",
+        description: "Kontrol pemutaran musik di Spotify atau Apple Music (play, pause, toggle, next, previous, now_playing).",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "action": .object(["type": .string("string"), "description": .string("Aksi kontrol musik: 'play', 'pause', 'toggle', 'next', 'previous', 'now_playing'.")]),
+            ]),
+            "required": .array([.string("action")]),
+        ])
+    )
+
     static let officeListSheetsDef = LLMToolDef(
         name: "office_list_sheets",
         description: "List all worksheet/tab names in the active Microsoft Excel or Numbers workbook.",
@@ -1144,7 +1285,7 @@ final class ToolExecutor: @unchecked Sendable {
     )
 
     // MARK: - Tool Aliases & Self-Healing Resilience
-    private static let toolAliases: [String: String] = [
+    static let toolAliases: [String: String] = [
         "check_security": "laptop_security_audit",
         "audit_security": "laptop_security_audit",
         "laptop_security": "laptop_security_audit",
@@ -1169,6 +1310,29 @@ final class ToolExecutor: @unchecked Sendable {
         "cctv_snapshot": "cctv_get_snapshot",
         "cctv_capture": "cctv_get_snapshot",
         "get_cctv": "cctv_get_snapshot",
+        "docker_ps": "docker_list_containers",
+        "docker_containers": "docker_list_containers",
+        "docker_logs": "docker_get_logs",
+        "container_logs": "docker_get_logs",
+        "restart_container": "docker_restart_container",
+        "check_server": "ssh_server_health",
+        "server_health": "ssh_server_health",
+        "server_status": "ssh_server_health",
+        "ssh_command": "ssh_run_command",
+        "server_command": "ssh_run_command",
+        "server_logs": "ssh_tail_log",
+        "server_log": "ssh_tail_log",
+        "calendar": "calendar_list_events",
+        "get_calendar": "calendar_list_events",
+        "add_reminder": "reminder_add_task",
+        "create_reminder": "reminder_add_task",
+        "add_task": "reminder_add_task",
+        "create_note": "notes_create_note",
+        "add_note": "notes_create_note",
+        "save_note": "notes_create_note",
+        "music_control": "media_control",
+        "spotify_control": "media_control",
+        "music": "media_control",
     ]
 
     /// Short, human-readable target for UI events and audit records.
@@ -1241,6 +1405,17 @@ final class ToolExecutor: @unchecked Sendable {
         case "cctv_list_cameras":     raw = "list cctv"
         case "cctv_get_snapshot":     raw = input["camera_identifier"]?.stringValue
         case "cctv_add_camera":       raw = input["name"]?.stringValue
+        case "docker_list_containers": raw = "docker ps"
+        case "docker_get_logs":        raw = input["container"]?.stringValue
+        case "docker_restart_container": raw = input["container"]?.stringValue
+        case "ssh_list_servers":       raw = "list servers"
+        case "ssh_server_health":      raw = input["server_identifier"]?.stringValue
+        case "ssh_run_command":        raw = input["command"]?.stringValue
+        case "ssh_tail_log":           raw = input["log_path_or_service"]?.stringValue
+        case "calendar_list_events":   raw = "calendar"
+        case "reminder_add_task":      raw = input["title"]?.stringValue
+        case "notes_create_note":      raw = input["title"]?.stringValue
+        case "media_control":          raw = input["action"]?.stringValue
         default:               raw = nil
         }
         let value = raw?.isEmpty == false ? raw! : name
@@ -1353,6 +1528,17 @@ final class ToolExecutor: @unchecked Sendable {
         case "cctv_list_cameras":     category = .read; target = "list cctv"
         case "cctv_get_snapshot":     category = .network; target = input["camera_identifier"]?.stringValue
         case "cctv_add_camera":       category = .fileWrite; target = input["name"]?.stringValue
+        case "docker_list_containers": category = .shell; target = "docker ps"
+        case "docker_get_logs":        category = .read;  target = input["container"]?.stringValue
+        case "docker_restart_container": category = .shell; target = input["container"]?.stringValue
+        case "ssh_list_servers":       category = .read; target = "list servers"
+        case "ssh_server_health":      category = .network; target = input["server_identifier"]?.stringValue
+        case "ssh_run_command":        category = .shell; target = input["command"]?.stringValue
+        case "ssh_tail_log":           category = .read;  target = input["log_path_or_service"]?.stringValue
+        case "calendar_list_events":   category = .read;  target = "calendar"
+        case "reminder_add_task":      category = .appControl; target = input["title"]?.stringValue
+        case "notes_create_note":      category = .appControl; target = input["title"]?.stringValue
+        case "media_control":          category = .appControl; target = input["action"]?.stringValue
         default:
             if let dyn = DynamicToolSynthesizer.shared.getTool(id: name) {
                 category = .shell
@@ -1643,6 +1829,77 @@ final class ToolExecutor: @unchecked Sendable {
             )
             CCTVGatewayService.shared.addOrUpdateCamera(config)
             return ToolResult(output: "Kamera CCTV '\(name)' (\(location)) berhasil ditambahkan dan disimpan.")
+        case "docker_list_containers":
+            let all = input["all"]?.boolValue ?? true
+            let (_, summary) = await DockerIntegrationService.shared.listContainers(all: all)
+            return ToolResult(output: summary)
+        case "docker_get_logs":
+            guard let container = input["container"]?.stringValue, !container.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'container' (nama/ID container).", isError: true)
+            }
+            let tail = input["tail"]?.numberValue.map { Int($0) } ?? 100
+            let logs = await DockerIntegrationService.shared.getLogs(container: container, tail: tail)
+            return ToolResult(output: logs)
+        case "docker_restart_container":
+            guard let container = input["container"]?.stringValue, !container.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'container' (nama/ID container).", isError: true)
+            }
+            let (success, msg) = await DockerIntegrationService.shared.restartContainer(container: container)
+            return ToolResult(output: msg, isError: !success)
+        case "ssh_list_servers":
+            let servers = SSHServerGatewayService.shared.listServers()
+            if servers.isEmpty {
+                return ToolResult(output: "Belum ada server remote yang terdaftar. Tambahkan via Pengaturan atau tool konfigurasi.")
+            }
+            let list = servers.map { "• \($0.name) (\($0.username)@\($0.host):\($0.port))" }.joined(separator: "\n")
+            return ToolResult(output: "Daftar Server Remote Terdaftar:\n\(list)")
+        case "ssh_server_health":
+            guard let srv = input["server_identifier"]?.stringValue, !srv.isEmpty else {
+                return ToolResult(output: "Harap berikan 'server_identifier' (nama atau host server).", isError: true)
+            }
+            let (report, summary) = await SSHServerGatewayService.shared.checkServerHealth(identifier: srv)
+            return ToolResult(output: summary, isError: report == nil)
+        case "ssh_run_command":
+            guard let srv = input["server_identifier"]?.stringValue, !srv.isEmpty,
+                  let cmd = input["command"]?.stringValue, !cmd.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'server_identifier' dan 'command'.", isError: true)
+            }
+            let (out, isErr) = await SSHServerGatewayService.shared.runRemoteCommand(identifier: srv, command: cmd)
+            return ToolResult(output: out, isError: isErr)
+        case "ssh_tail_log":
+            guard let srv = input["server_identifier"]?.stringValue, !srv.isEmpty,
+                  let logTarget = input["log_path_or_service"]?.stringValue, !logTarget.isEmpty else {
+                return ToolResult(output: "Harap berikan 'server_identifier' dan 'log_path_or_service'.", isError: true)
+            }
+            let lines = input["lines"]?.numberValue.map { Int($0) } ?? 50
+            let logOut = await SSHServerGatewayService.shared.tailLog(identifier: srv, logPathOrService: logTarget, lines: lines)
+            return ToolResult(output: logOut)
+        case "calendar_list_events":
+            let days = input["days_ahead"]?.numberValue.map { Int($0) } ?? 1
+            let result = await AppleAppsIntegrationService.shared.listCalendarEvents(daysAhead: days)
+            return ToolResult(output: result)
+        case "reminder_add_task":
+            guard let title = input["title"]?.stringValue, !title.isEmpty else {
+                return ToolResult(output: "Harap berikan 'title' untuk pengingat tugas.", isError: true)
+            }
+            let due = input["due_date"]?.stringValue
+            let list = input["list_name"]?.stringValue
+            let res = await AppleAppsIntegrationService.shared.addReminder(title: title, dueString: due, listName: list)
+            return ToolResult(output: res)
+        case "notes_create_note":
+            guard let title = input["title"]?.stringValue, !title.isEmpty,
+                  let body = input["body"]?.stringValue, !body.isEmpty else {
+                return ToolResult(output: "Harap berikan 'title' dan 'body' untuk catatan.", isError: true)
+            }
+            let folder = input["folder_name"]?.stringValue
+            let res = await AppleAppsIntegrationService.shared.createNote(title: title, body: body, folderName: folder)
+            return ToolResult(output: res)
+        case "media_control":
+            guard let action = input["action"]?.stringValue, !action.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'action' (play, pause, toggle, next, previous, now_playing).", isError: true)
+            }
+            let res = await AppleAppsIntegrationService.shared.controlMedia(action: action)
+            return ToolResult(output: res)
         default:
             if let _ = DynamicToolSynthesizer.shared.getTool(id: name) {
                 var args: [String: String] = [:]

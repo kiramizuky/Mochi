@@ -34,8 +34,8 @@ struct IslandContainer: View {
 
     private var chatPromptHeight: CGFloat {
         let base: CGFloat = 240
-        let perMsg: CGFloat = 45
-        return min(420, base + CGFloat(state.chatHistory.count) * perMsg)
+        let perMsg: CGFloat = 50
+        return min(480, base + CGFloat(state.chatHistory.count) * perMsg)
     }
 
     /// Pixels the content must be pushed down to clear the concave ear transparent area.

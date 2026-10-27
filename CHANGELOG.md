@@ -29,6 +29,20 @@
 
 ### macOS
 
+- **Application, Server & DevOps Orchestration Suite**:
+  - 🐳 **Docker & Container Engine Integration (`DockerIntegrationService`)**: Mendeteksi Docker daemon lokal secara non-blocking (`isDockerAvailable`), membaca status container (Up/Down, image, ports, ID) dengan visualisasi tabel interaktif otomatis di Canvas Studio (`docker_list_containers` / alias `docker_ps`), mengambil baris log output container terakhir (`docker_get_logs` / `docker_logs`), serta me-restart container secara aman (`docker_restart_container`).
+  - 🖥️ **Remote Server SSH Gateway & Diagnostics (`SSHServerGatewayService`)**: Gateway pemantauan server Linux / Cloud jarak jauh via koneksi SSH terenkripsi (`ssh_list_servers`, `ssh_server_health`, `ssh_run_command`, `ssh_tail_log`). Secara otomatis melakukan audit kesehatan server (uptime, load average, kapasitas RAM, penggunaan disk `df -h /`, status layanan systemd) dan menghasilkan kartu diagnostik elegan di Canvas.
+  - 🍎 **Apple Ecosystem & Desktop Productivity Integration (`AppleAppsIntegrationService`)**: Kontrol aplikasi bawaan macOS via AppleScript bridge tanpa overhead:
+    - 📅 **Apple Calendar (`calendar_list_events` / `calendar`)**: Membaca jadwal agenda rapat dan event hari ini atau beberapa hari ke depan.
+    - 📝 **Apple Reminders (`reminder_add_task` / `add_reminder`)**: Menambahkan to-do item langsung ke daftar pengingat macOS.
+    - 📋 **Apple Notes (`notes_create_note` / `create_note`)**: Menyimpan catatan atau laporan riset ke folder Apple Notes.
+    - 🎵 **Media Controller (`media_control` / `music_control` / `spotify_control`)**: Mengontrol playback lagu, pause, toggle, next track, dan membaca metadata lagu yang sedang diputar di Spotify & Apple Music.
+  - 🖥️ **Panel Pengaturan Integrasi & MCP (`SettingsView.swift`)**:
+    - Kartu status Docker Daemon real-time dengan penghitung container aktif dan tombol "Lihat di Canvas".
+    - Formulir registrasi Remote Server SSH (label, host/IP, port, username, key path) dengan aksi audit instan dan manajemen daftar server.
+  - 📏 **Chat View Clipping & Height Fix**: Memperluas tinggi panel `IslandPanel` hingga 520 pt dan menambahkan `.layoutPriority(1)` pada container input chat di `IslandViewContent.swift`, memastikan riwayat chat yang panjang tidak pernah memotong area input teks, mikrofon, atau tombol kirim.
+  - 🖼️ **Webcam & Media Delivery to Canvas**: Setiap foto tangkapan kamera webcam dan snapshot CCTV kini otomatis disematkan ke dalam `CanvasArtifact` dan menampilkan tombol interaktif `[ Buka Canvas ]` di Notch Island.
+
 - **Visual Perception, Biometric Face Recognition, CCTV Gateway & Network Sentinel Suite**:
   - 📷 **Webcam Visual Perception (`WebcamCaptureService`)**: Mengintegrasikan penangkapan visual on-demand menggunakan `AVFoundation` (`AVCaptureSession` & `AVCapturePhotoOutput`) dengan jaminan privasi mutlak macOS (zero background recording, sesi capture langsung ditutup seketika untuk mematikan LED hijau kamera hardware). Mochi mampu memotret lingkungan sekitar dan menganalisis objek fisik melalui VLM multimodal atau Apple Vision on-device (`camera_capture_photo`, `camera_analyze`).
   - 👤 **On-Device Biometric Face Recognition & Presence Guard (`FaceRecognitionService`)**: Sistem pengenalan wajah 100% lokal dipercepat oleh Apple Neural Engine (ANE) via Apple `Vision.framework`. Fitur registrasi wajah pemilik (`face_enroll_owner`) dan verifikasi kehadiran (`face_verify_presence`). Dilengkapi sistem **Peeking / Intruder Guard** yang otomatis mendeteksi dan memberi peringatan di Notch saat ada lebih dari 1 orang menatap layar MacBook di tempat umum.

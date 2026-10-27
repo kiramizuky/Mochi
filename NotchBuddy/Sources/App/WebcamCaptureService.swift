@@ -140,6 +140,27 @@ public final class WebcamCaptureService: @unchecked Sendable {
             }
         }
 
+        // Simpan ke Canvas Artifact agar pengguna dapat langsung membuka gambar di Canvas
+        let artifact = CanvasArtifact(
+            id: "webcam_\(Int(Date().timeIntervalSince1970))",
+            title: "Foto Webcam (\(width)x\(height) px)",
+            type: .document,
+            content: """
+            # Tangkapan Kamera MacBook
+            - **Waktu**: \(Date().formatted())
+            - **Path File**: `\(tempUrl.path)`
+            - **Resolusi**: \(width) x \(height) px
+            - **Wajah Terdeteksi**: \(faceCount)
+            \(classifications.isEmpty ? "" : "- **Objek / Konteks**: " + classifications.joined(separator: ", "))
+
+            ![Tangkapan Kamera](\(tempUrl.path))
+            """,
+            metadata: ["filePath": tempUrl.path]
+        )
+        Task { @MainActor in
+            CanvasManager.shared.currentArtifact = artifact
+        }
+
         return WebcamCaptureResult(
             timestamp: Date(),
             filePath: tempUrl.path,
