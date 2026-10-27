@@ -27,8 +27,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 pub const PANEL_W: f64 = 720.0;
 pub const PANEL_H: f64 = 320.0;
 /// Logical size of the invisible strip that wakes the island when it is hidden.
-pub const STRIP_W: f64 = 240.0;
-pub const STRIP_H: f64 = 6.0;
+pub const STRIP_W: f64 = 280.0;
+pub const STRIP_H: f64 = 10.0;
 
 pub const WINDOW_LABEL: &str = "island";
 
@@ -449,14 +449,14 @@ mod tests {
 
     #[test]
     fn wake_strip_is_top_centred_and_scaled() {
-        // 150%: 240x6 logical becomes 360x9 physical.
+        // 150%: 280x10 logical becomes 420x15 physical.
         assert_eq!(
             placement((0, 0), (2560, 1440), 1.5, true),
             Placement {
-                x: 1100,
+                x: 1070,
                 y: 0,
-                width: 360,
-                height: 9,
+                width: 420,
+                height: 15,
             }
         );
     }

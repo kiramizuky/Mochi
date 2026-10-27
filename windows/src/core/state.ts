@@ -104,6 +104,8 @@ export interface Settings {
   onboarded: boolean;
   /** Ask GitHub Releases for a newer version when Settings opens. */
   autoCheckUpdates: boolean;
+  /** If true, island stays as compact pill at top of screen and never auto-hides. */
+  keepVisible: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -124,6 +126,7 @@ export const DEFAULT_SETTINGS: Settings = {
   preferredTerminal: "auto",
   onboarded: false,
   autoCheckUpdates: true,
+  keepVisible: true,
 };
 
 type Listener = () => void;

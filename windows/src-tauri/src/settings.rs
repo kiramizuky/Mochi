@@ -46,6 +46,13 @@ pub struct Settings {
     /// update manifest is fetched; installing is always an explicit click.
     #[serde(default = "default_auto_check_updates")]
     pub auto_check_updates: bool,
+    /// If true, the compact island stays docked at the top of the screen and never auto-hides.
+    #[serde(default = "default_keep_visible")]
+    pub keep_visible: bool,
+}
+
+fn default_keep_visible() -> bool {
+    true
 }
 
 fn default_auto_check_updates() -> bool {
@@ -111,6 +118,7 @@ impl Default for Settings {
             preferred_terminal: default_launcher(),
             onboarded: false,
             auto_check_updates: default_auto_check_updates(),
+            keep_visible: default_keep_visible(),
         }
     }
 }

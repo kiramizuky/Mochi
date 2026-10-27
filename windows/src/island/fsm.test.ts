@@ -127,4 +127,15 @@ describe("IslandStateMachine", () => {
     fsm.forceHidden();
     expect(transitions).toEqual([]);
   });
+
+  it("stays in petit and never auto-hides when keepVisible is true", () => {
+    const { fsm } = make();
+    fsm.keepVisible = true;
+    fsm.mouseEntered();
+    expect(fsm.state).toBe("petit");
+
+    fsm.mouseLeft();
+    vi.advanceTimersByTime(300_000);
+    expect(fsm.state).toBe("petit");
+  });
 });
