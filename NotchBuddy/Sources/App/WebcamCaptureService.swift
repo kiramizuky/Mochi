@@ -53,6 +53,9 @@ public final class WebcamCaptureService: @unchecked Sendable {
     public static let shared = WebcamCaptureService()
 
     private let captureQueue = DispatchQueue(label: "com.notchbuddy.webcam.queue", qos: .userInitiated)
+    private let stateLock = NSLock()
+    private var activeSession: AVCaptureSession?
+    private var activeDelegate: (any AnyObject)?
 
     private init() {}
 
@@ -87,6 +90,7 @@ public final class WebcamCaptureService: @unchecked Sendable {
 
         let photoData: Data = try await withCheckedThrowingContinuation { continuation in
             captureQueue.async {
+                appendAppLog("nb.log", "WebcamCapture: Menginisialisasi kamera \(device.localizedName)...")
                 let session = AVCaptureSession()
                 session.beginConfiguration()
                 session.sessionPreset = .high
@@ -106,16 +110,34 @@ public final class WebcamCaptureService: @unchecked Sendable {
 
                 let gate = CompletionGate()
 
+                var grabberRef: SingleFrameGrabber?
                 let grabber = SingleFrameGrabber { result in
                     guard gate.tryComplete() else { return }
-                    session.stopRunning()
+                    self.stateLock.lock()
+                    self.activeDelegate = nil
+                    self.activeSession = nil
+                    self.stateLock.unlock()
+
+                    DispatchQueue.global().async {
+                        session.stopRunning()
+                    }
                     continuation.resume(with: result)
                 }
+                grabberRef = grabber
+
+                self.stateLock.lock()
+                self.activeDelegate = grabber
+                self.activeSession = session
+                self.stateLock.unlock()
 
                 let videoQueue = DispatchQueue(label: "com.notchbuddy.webcam.grabber", qos: .userInitiated)
                 videoOutput.setSampleBufferDelegate(grabber, queue: videoQueue)
 
                 guard session.canAddOutput(videoOutput) else {
+                    self.stateLock.lock()
+                    self.activeDelegate = nil
+                    self.activeSession = nil
+                    self.stateLock.unlock()
                     continuation.resume(throwing: WebcamError.sessionConfigurationFailed)
                     return
                 }
@@ -123,11 +145,21 @@ public final class WebcamCaptureService: @unchecked Sendable {
                 session.commitConfiguration()
 
                 session.startRunning()
+                appendAppLog("nb.log", "WebcamCapture: Sesi kamera berjalan (running=\(session.isRunning)), menunggu frame...")
 
-                // Fallback timeout pengaman 6 detik
-                DispatchQueue.global().asyncAfter(deadline: .now() + 6.0) {
+                // Fallback timeout pengaman 8 detik
+                DispatchQueue.global().asyncAfter(deadline: .now() + 8.0) {
                     guard gate.tryComplete() else { return }
-                    session.stopRunning()
+                    self.stateLock.lock()
+                    self.activeDelegate = nil
+                    self.activeSession = nil
+                    self.stateLock.unlock()
+                    grabberRef?.releaseSelf()
+
+                    DispatchQueue.global().async {
+                        session.stopRunning()
+                    }
+                    appendAppLog("nb.log", "WebcamCapture: Timeout 8 detik tercapai.")
                     continuation.resume(throwing: WebcamError.captureFailed("Waktu respons kamera habis (timeout)"))
                 }
             }
@@ -235,16 +267,34 @@ public final class WebcamCaptureService: @unchecked Sendable {
 
                 let gate = CompletionGate()
 
+                var recorderRef: VideoRecorderSession?
                 let recorder = VideoRecorderSession(outputUrl: outputUrl, durationSeconds: clampedDuration) { result in
                     guard gate.tryComplete() else { return }
-                    session.stopRunning()
+                    self.stateLock.lock()
+                    self.activeDelegate = nil
+                    self.activeSession = nil
+                    self.stateLock.unlock()
+
+                    DispatchQueue.global().async {
+                        session.stopRunning()
+                    }
                     continuation.resume(with: result)
                 }
+                recorderRef = recorder
+
+                self.stateLock.lock()
+                self.activeDelegate = recorder
+                self.activeSession = session
+                self.stateLock.unlock()
 
                 let videoQueue = DispatchQueue(label: "com.notchbuddy.webcam.recorder", qos: .userInitiated)
                 videoOutput.setSampleBufferDelegate(recorder, queue: videoQueue)
 
                 guard session.canAddOutput(videoOutput) else {
+                    self.stateLock.lock()
+                    self.activeDelegate = nil
+                    self.activeSession = nil
+                    self.stateLock.unlock()
                     continuation.resume(throwing: WebcamError.sessionConfigurationFailed)
                     return
                 }
@@ -253,10 +303,18 @@ public final class WebcamCaptureService: @unchecked Sendable {
 
                 session.startRunning()
 
-                // Fallback timeout pengaman (durasi + 6 detik)
-                DispatchQueue.global().asyncAfter(deadline: .now() + clampedDuration + 6.0) {
+                // Fallback timeout pengaman (durasi + 8 detik)
+                DispatchQueue.global().asyncAfter(deadline: .now() + clampedDuration + 8.0) {
                     guard gate.tryComplete() else { return }
-                    session.stopRunning()
+                    self.stateLock.lock()
+                    self.activeDelegate = nil
+                    self.activeSession = nil
+                    self.stateLock.unlock()
+                    recorderRef?.releaseSelf()
+
+                    DispatchQueue.global().async {
+                        session.stopRunning()
+                    }
                     continuation.resume(throwing: WebcamError.recordingFailed("Waktu perekaman video habis (timeout)"))
                 }
             }
@@ -346,6 +404,7 @@ private final class CompletionGate: @unchecked Sendable {
 // MARK: - Internal Single Frame Grabber Delegate
 
 private final class SingleFrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+    private var selfRetain: SingleFrameGrabber?
     private let completion: @Sendable (Result<Data, Error>) -> Void
     private var framesReceived = 0
     private var isDone = false
@@ -353,6 +412,14 @@ private final class SingleFrameGrabber: NSObject, AVCaptureVideoDataOutputSample
 
     init(completion: @escaping @Sendable (Result<Data, Error>) -> Void) {
         self.completion = completion
+        super.init()
+        self.selfRetain = self
+    }
+
+    func releaseSelf() {
+        lock.lock()
+        defer { lock.unlock() }
+        selfRetain = nil
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -362,11 +429,12 @@ private final class SingleFrameGrabber: NSObject, AVCaptureVideoDataOutputSample
 
         framesReceived += 1
 
-        // Lewati 3 frame pertama untuk auto-exposure dan auto-white-balance warm-up
-        if framesReceived >= 4 {
+        // Frame ke-2 sudah stabil exposure dan white balance di FaceTime HD camera
+        if framesReceived >= 2 {
             isDone = true
             guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
                 completion(.failure(WebcamError.captureFailed("Gagal memperoleh image buffer dari kamera")))
+                releaseSelf()
                 return
             }
 
@@ -379,10 +447,14 @@ private final class SingleFrameGrabber: NSObject, AVCaptureVideoDataOutputSample
                   let bitmapRep = NSBitmapImageRep(data: tiffData),
                   let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.9]) else {
                 completion(.failure(WebcamError.captureFailed("Gagal mengonversi frame kamera ke format JPEG")))
+                releaseSelf()
                 return
             }
 
             completion(.success(jpegData))
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.releaseSelf()
+            }
         }
     }
 }
@@ -390,6 +462,7 @@ private final class SingleFrameGrabber: NSObject, AVCaptureVideoDataOutputSample
 // MARK: - Internal Video Recorder Session
 
 private final class VideoRecorderSession: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+    private var selfRetain: VideoRecorderSession?
     private var assetWriter: AVAssetWriter?
     private var writerInput: AVAssetWriterInput?
     private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
@@ -408,6 +481,13 @@ private final class VideoRecorderSession: NSObject, AVCaptureVideoDataOutputSamp
         self.targetFrames = max(24, Int(durationSeconds * 24.0)) // Target 24 fps
         self.completion = completion
         super.init()
+        self.selfRetain = self
+    }
+
+    func releaseSelf() {
+        lock.lock()
+        defer { lock.unlock() }
+        selfRetain = nil
     }
 
     private func setupWriter(width: Int, height: Int) throws {
@@ -467,6 +547,7 @@ private final class VideoRecorderSession: NSObject, AVCaptureVideoDataOutputSamp
             } catch {
                 completion(.failure(error))
                 isRecording = false
+                releaseSelf()
                 return
             }
         }
@@ -504,6 +585,9 @@ private final class VideoRecorderSession: NSObject, AVCaptureVideoDataOutputSamp
                     comp(.failure(error))
                 } else {
                     comp(.success((outUrl, w, h)))
+                }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.releaseSelf()
                 }
             }
         }

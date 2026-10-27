@@ -29,6 +29,13 @@
 
 ### macOS
 
+- **Perbaikan Bug Timeout Kamera Webcam (FaceTime HD / USB Camera)**:
+  - 📷 **Retensi Kuat Delegasi Kamera (`AVCaptureVideoDataOutputSampleBufferDelegate`)**:
+    - Memperbaiki akar penyebab timeout kamera (*"waktu response kamera habis"*) saat pendaftaran wajah pemilik di menu Settings maupun saat capture foto/video.
+    - `AVCaptureVideoDataOutput.setSampleBufferDelegate(_:queue:)` hanya menyimpan *weak reference* ke delegate. Mengimplementasikan pattern *self-retaining* (`selfRetain = self` & `releaseSelf()`) pada `SingleFrameGrabber` dan `VideoRecorderSession`, serta retensi eksplisit di `WebcamCaptureService.shared` (`activeDelegate` dan `activeSession`) sehingga delegate tidak ter-deallocate prematur oleh ARC.
+    - Mengurangi ambang frame stabilisasi dari 4 frame menjadi 2 frame (`framesReceived >= 2`) untuk respon tangkapan foto instan (~150–300 ms).
+    - Menjadwalkan penghentian sesi kamera (`session.stopRunning()`) secara asinkron di background thread agar tidak memblokir antrean delegate.
+
 - **Peningkatan Respons Telegram: Format MarkdownV2 & Estetika Style Telegram**:
   - 🎨 **Format Jawaban MarkdownV2 Telegram (`TelegramFormatter.toMarkdownV2`)**:
     - Seluruh pesan teks balasan dari Mochi ke Telegram kini otomatis dikonversikan dan di-escape secara presisi ke format `MarkdownV2` Telegram (menjaga reserved characters `_`, `*`, `[`, `]`, `(`, `)`, `~`, `` ` ``, `>`, `#`, `+`, `-`, `=`, `|`, `{`, `}`, `.`, `!`).

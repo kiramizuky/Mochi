@@ -39,3 +39,4 @@ print("Bar 75%: \(bar75)")
 assert(bar75 == "■■■■■■□□", "Progress bar 75% harus 6 penuh dan 2 kosong")
 
 print("=== SEMUA TEST TELEGRAM MARKDOWNV2 LULUS (100%) ===")
+
