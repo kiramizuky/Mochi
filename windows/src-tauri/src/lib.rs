@@ -1,5 +1,6 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
+mod app_integrations;
 mod claude;
 mod crash;
 mod files;
@@ -622,6 +623,66 @@ fn memory_forget(id: String) -> Result<bool, String> {
     Ok(res)
 }
 
+#[tauri::command]
+fn apps_list_running() -> Vec<app_integrations::RunningAppInfo> {
+    app_integrations::list_running_apps()
+}
+
+#[tauri::command]
+fn apps_launch(name: String, argument: Option<String>) -> Result<String, String> {
+    let res = app_integrations::launch_app(&name, argument.as_deref())?;
+    security::record_audit(
+        "apps.launch",
+        Some("process.spawn"),
+        None,
+        Some(&name),
+        "allow",
+        "user_action",
+        "success",
+    );
+    Ok(res)
+}
+
+#[tauri::command]
+fn apps_close(name: String) -> Result<String, String> {
+    let res = app_integrations::close_app(&name)?;
+    security::record_audit(
+        "apps.close",
+        Some("process.terminate"),
+        None,
+        Some(&name),
+        "allow",
+        "user_action",
+        "success",
+    );
+    Ok(res)
+}
+
+#[tauri::command]
+fn apps_git_status(path: Option<String>) -> app_integrations::GitRepoStatus {
+    app_integrations::inspect_git_status(path.as_deref())
+}
+
+#[tauri::command]
+fn apps_docker_status() -> app_integrations::DockerIntegrationStatus {
+    app_integrations::inspect_docker()
+}
+
+#[tauri::command]
+fn apps_docker_action(action: String, container_id: String) -> Result<String, String> {
+    let res = app_integrations::manage_docker_container(&action, &container_id)?;
+    security::record_audit(
+        "docker.action",
+        Some("container.mutate"),
+        None,
+        Some(&format!("{action}:{container_id}")),
+        "allow",
+        "user_action",
+        "success",
+    );
+    Ok(res)
+}
+
 pub fn run() {
     // Before anything else can panic, so a crash leaves a local report.
     crash::install();
@@ -702,6 +763,12 @@ pub fn run() {
             memory_remember,
             memory_all,
             memory_forget,
+            apps_list_running,
+            apps_launch,
+            apps_close,
+            apps_git_status,
+            apps_docker_status,
+            apps_docker_action,
         ])
         .setup(move |app| {
             security::init_killswitch();

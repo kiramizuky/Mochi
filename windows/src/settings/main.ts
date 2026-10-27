@@ -1416,6 +1416,121 @@ function memorySection(): HTMLElement {
   return section;
 }
 
+// ── Desktop & Server App Integrations Section ───────────────────────────────
+
+function appIntegrationsSection() {
+  const section = h("section", { id: "app-integrations" });
+  section.append(h("h2", {}, h("span", { text: "Desktop & Server App Integrations" })));
+  section.append(
+    h("div", {
+      class: "hint",
+      text: "Integrasi sistem komputer lokal: pemantauan aplikasi aktif, peluncur aplikasi, Git repository, dan Docker Desktop.",
+    }),
+  );
+
+  // Quick Launcher Buttons
+  const launcherRow = h("div", { class: "row", style: "gap: 6px; flex-wrap: wrap; margin-top: 8px;" });
+  const appList = [
+    { label: "VS Code", id: "vscode" },
+    { label: "Cursor", id: "cursor" },
+    { label: "Terminal", id: "terminal" },
+    { label: "PowerShell", id: "powershell" },
+    { label: "Notepad", id: "notepad" },
+    { label: "Explorer", id: "explorer" },
+    { label: "Task Manager", id: "taskmgr" },
+  ];
+  for (const item of appList) {
+    const btn = h("button", {
+      class: "primary",
+      style: "font-size: 11px; padding: 4px 8px;",
+      text: item.label,
+      onclick: async () => {
+        try {
+          const res = await Bridge.appsLaunch(item.id);
+          alertContainer.innerText = res;
+          alertContainer.style.display = "block";
+        } catch (e) {
+          alertContainer.innerText = String(e);
+          alertContainer.style.display = "block";
+        }
+      },
+    });
+    launcherRow.append(btn);
+  }
+  section.append(launcherRow);
+
+  const alertContainer = h("div", {
+    class: "notice ok",
+    style: "display: none; margin-top: 8px; font-size: 12px;",
+  });
+  section.append(alertContainer);
+
+  // Running Apps Box
+  const runningBox = h("div", { style: "margin-top: 14px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;" });
+  const runningHeader = h("div", { class: "row", style: "justify-content: space-between; margin-bottom: 6px;" },
+    h("strong", { style: "font-size: 12px;", text: "Aplikasi Desktop yang Sedang Terbuka" }),
+    h("button", {
+      style: "font-size: 11px; padding: 2px 6px;",
+      text: "Refresh Apps",
+      onclick: () => void loadRunningApps(),
+    }),
+  );
+  const runningList = h("div", { style: "font-size: 12px; max-height: 140px; overflow-y: auto;" });
+  runningBox.append(runningHeader, runningList);
+  section.append(runningBox);
+
+  async function loadRunningApps() {
+    clear(runningList);
+    runningList.append(h("span", { class: "hint", text: "Memuat aplikasi aktif..." }));
+    const apps = (await Bridge.appsListRunning()) ?? [];
+    clear(runningList);
+    if (apps.length === 0) {
+      runningList.append(h("span", { class: "hint", text: "Tidak ada aplikasi desktop dengan jendela aktif." }));
+      return;
+    }
+    for (const a of apps) {
+      const row = h("div", { class: "row", style: "justify-content: space-between; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03);" },
+        h("span", { text: `• ${a.processName} (PID: ${a.pid})` }),
+        h("span", { class: "dim", style: "font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;", text: a.windowTitle }),
+      );
+      runningList.append(row);
+    }
+  }
+
+  // Docker & Git Row
+  const opsRow = h("div", { class: "row", style: "gap: 8px; margin-top: 10px;" },
+    h("button", {
+      style: "font-size: 11px;",
+      text: "Cek Docker Containers",
+      onclick: async () => {
+        opsOutput.innerText = "Memeriksa status Docker Desktop...";
+        opsOutput.style.display = "block";
+        const res = await Bridge.appsDockerStatus();
+        opsOutput.innerText = res ? res.summaryMarkdown : "Docker tidak tersedia.";
+      },
+    }),
+    h("button", {
+      style: "font-size: 11px;",
+      text: "Cek Git Status Proyek",
+      onclick: async () => {
+        opsOutput.innerText = "Memeriksa status Git repository...";
+        opsOutput.style.display = "block";
+        const res = await Bridge.appsGitStatus();
+        opsOutput.innerText = res ? res.summaryMarkdown : "Bukan repositori Git.";
+      },
+    }),
+  );
+  section.append(opsRow);
+
+  const opsOutput = h("pre", {
+    style: "display: none; margin-top: 8px; font-size: 11px; background: rgba(0,0,0,0.4); padding: 8px; border-radius: 6px; white-space: pre-wrap;",
+  });
+  section.append(opsOutput);
+
+  void loadRunningApps();
+  return section;
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -1463,6 +1578,7 @@ async function main() {
     securitySection(),
     sentinelSection(),
     memorySection(),
+    appIntegrationsSection(),
     updateSection(),
     logSection(),
     crashSection(crashes),

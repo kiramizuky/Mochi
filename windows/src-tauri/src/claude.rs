@@ -169,6 +169,132 @@ pub async fn send(
         return Ok(ChatReply { text: reply });
     }
 
+    // ── Desktop Applications & Server Integrations Direct Actions ────────────
+
+    // Running Apps listing
+    if q_lower.contains("aplikasi apa saja")
+        || q_lower.contains("aplikasi yang jalan")
+        || q_lower.contains("aplikasi yang terbuka")
+        || q_lower.contains("list aplikasi")
+        || q_lower.contains("running apps")
+    {
+        let apps = crate::app_integrations::list_running_apps();
+        let reply = if apps.is_empty() {
+            "Tidak ditemukan aplikasi desktop dengan jendela aktif yang sedang berjalan.".into()
+        } else {
+            let mut s = format!("### Aplikasi Desktop yang Sedang Berjalan ({}):\n", apps.len());
+            for app in &apps {
+                s.push_str(&format!("• **{}** (PID: {}) — *{}*\n", app.process_name, app.pid, app.window_title));
+            }
+            s
+        };
+        chat.push(Turn {
+            role: "assistant",
+            text: reply.clone(),
+            attachments: Vec::new(),
+        });
+        return Ok(ChatReply { text: reply });
+    }
+
+    // Launch app
+    if q_lower.starts_with("buka ") || q_lower.starts_with("jalankan ") || q_lower.starts_with("launch ") || q_lower.starts_with("open ") {
+        let app_target = query
+            .trim_start_matches("buka ")
+            .trim_start_matches("jalankan ")
+            .trim_start_matches("launch ")
+            .trim_start_matches("open ")
+            .trim();
+        if !app_target.is_empty() && !app_target.starts_with("http") {
+            let res = crate::app_integrations::launch_app(app_target, None);
+            let reply = match res {
+                Ok(msg) => msg,
+                Err(err) => format!("Tidak dapat membuka '{}': {}", app_target, err),
+            };
+            chat.push(Turn {
+                role: "assistant",
+                text: reply.clone(),
+                attachments: Vec::new(),
+            });
+            return Ok(ChatReply { text: reply });
+        }
+    }
+
+    // Close app
+    if q_lower.starts_with("tutup ") || q_lower.starts_with("close ") || q_lower.starts_with("kill ") {
+        let app_target = query
+            .trim_start_matches("tutup ")
+            .trim_start_matches("close ")
+            .trim_start_matches("kill ")
+            .trim();
+        if !app_target.is_empty() {
+            let res = crate::app_integrations::close_app(app_target);
+            let reply = match res {
+                Ok(msg) => msg,
+                Err(err) => err,
+            };
+            chat.push(Turn {
+                role: "assistant",
+                text: reply.clone(),
+                attachments: Vec::new(),
+            });
+            return Ok(ChatReply { text: reply });
+        }
+    }
+
+    // Git Status
+    if q_lower.contains("git status") || q_lower.contains("status git") || q_lower.contains("cek git") {
+        let status = crate::app_integrations::inspect_git_status(None);
+        let reply = status.summary_markdown;
+        chat.push(Turn {
+            role: "assistant",
+            text: reply.clone(),
+            attachments: Vec::new(),
+        });
+        return Ok(ChatReply { text: reply });
+    }
+
+    // Docker Status & Management
+    if q_lower.contains("cek docker") || q_lower.contains("status docker") || q_lower.contains("kontainer docker") || q_lower.contains("docker ps") {
+        let docker = crate::app_integrations::inspect_docker();
+        let reply = docker.summary_markdown;
+        chat.push(Turn {
+            role: "assistant",
+            text: reply.clone(),
+            attachments: Vec::new(),
+        });
+        return Ok(ChatReply { text: reply });
+    }
+
+    if q_lower.starts_with("restart kontainer ") || q_lower.starts_with("restart container ") {
+        let id = query.trim_start_matches("restart kontainer ").trim_start_matches("restart container ").trim();
+        let res = crate::app_integrations::manage_docker_container("restart", id);
+        let reply = match res {
+            Ok(msg) => msg,
+            Err(err) => err,
+        };
+        chat.push(Turn {
+            role: "assistant",
+            text: reply.clone(),
+            attachments: Vec::new(),
+        });
+        return Ok(ChatReply { text: reply });
+    }
+
+    if q_lower.starts_with("log kontainer ") || q_lower.starts_with("log container ") {
+        let id = query.trim_start_matches("log kontainer ").trim_start_matches("log container ").trim();
+        let res = crate::app_integrations::manage_docker_container("logs", id);
+        let reply = match res {
+            Ok(msg) => msg,
+            Err(err) => err,
+        };
+        chat.push(Turn {
+            role: "assistant",
+            text: reply.clone(),
+            attachments: Vec::new(),
+        });
+        return Ok(ChatReply { text: reply });
+    }
+
     let memory_context = crate::memory::format_for_system_prompt();
     let full_system_prompt = format!("{SYSTEM_PROMPT}{memory_context}");
 

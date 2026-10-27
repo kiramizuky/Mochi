@@ -164,6 +164,16 @@ export const Bridge = {
   memoryRemember: (fact: string) => callOrThrow<MemoryItem>("memory_remember", { fact }),
   memoryAll: () => call<MemoryItem[]>("memory_all"),
   memoryForget: (id: string) => callOrThrow<boolean>("memory_forget", { id }),
+
+  // ── Desktop & Server App Integrations ─────────────────────────────────────
+  appsListRunning: () => call<RunningAppInfo[]>("apps_list_running"),
+  appsLaunch: (name: string, argument?: string) =>
+    callOrThrow<string>("apps_launch", { name, argument }),
+  appsClose: (name: string) => callOrThrow<string>("apps_close", { name }),
+  appsGitStatus: (path?: string) => call<GitRepoStatus>("apps_git_status", { path }),
+  appsDockerStatus: () => call<DockerIntegrationStatus>("apps_docker_status"),
+  appsDockerAction: (action: string, containerId: string) =>
+    callOrThrow<string>("apps_docker_action", { action, containerId }),
 };
 
 export interface IntegrationUpdate {
@@ -350,6 +360,37 @@ export interface MemoryItem {
   id: string;
   fact: string;
   createdAt: string;
+}
+
+export interface RunningAppInfo {
+  pid: number;
+  processName: string;
+  windowTitle: string;
+}
+
+export interface GitRepoStatus {
+  isRepo: boolean;
+  branch: string;
+  clean: boolean;
+  changedFiles: string[];
+  recentCommits: string[];
+  summaryMarkdown: string;
+}
+
+export interface DockerContainerInfo {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  ports: string;
+  isRunning: boolean;
+}
+
+export interface DockerIntegrationStatus {
+  isAvailable: boolean;
+  version: string;
+  containers: DockerContainerInfo[];
+  summaryMarkdown: string;
 }
 
 /** Same as `call`, but surfaces the error so the UI can show what went wrong. */
