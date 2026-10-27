@@ -123,6 +123,23 @@ Mencapai pengalaman bercakap-cakap yang setara dengan asisten masa depan:
 
 ---
 
+### 🎬 Paket 14: Dynamic Island Media Studio, Gallery & Multi-Format Player
+
+Transformasi Notch MacBook menjadi Dynamic Island Media Hub yang memukau:
+
+1. **Dynamic Media Pill (Resting / Compact Mode)**:
+   - Notch melebar secara mulus (*fluid morphing* ke 248px) saat ada audio/video yang berputar di latar belakang.
+   - Menampilkan mini cover art di sebelah kiri notch dan **Live Equalizer Wavebars** (visualizer gelombang suara berdenyut) di sebelah kanan notch.
+2. **Expanded Island Media Studio (`IslandView.media`)**:
+   - **Music Player Card**: Album art glow ambient, marquee running text judul lagu/artis, timeline scrubbing interaktif, tombol kontrol playback lengkap (Play/Pause, Next, Prev, Shuffle, Repeat), dan volume slider.
+   - **Video Player Card**: Pemutar klip video native (`AVPlayer`) untuk review rekaman layar, video CCTV/keamanan, atau file MP4/MOV lokal.
+   - **Image Viewer & Gallery Card**: Penampil foto/screenshot resolusi tinggi, badge metadata (dimensi, ukuran file, format), tombol salin ke clipboard, dan carousel thumbnail strip.
+3. **Ekspansi ke Canvas Studio 2.0 (`.media` & `.gallery`)**:
+   - Tipe artifact baru di Canvas Studio untuk inspeksi media resolusi penuh dan galeri foto multi-kolom dengan lightbox.
+4. **Dokumen Master Plan Lengkap**: Lihat [`docs/PLAN_NOTCH_MEDIA_STUDIO.md`](file:///Users/mymac/Documents/Projects/JARVIS/coucou/docs/PLAN_NOTCH_MEDIA_STUDIO.md).
+
+---
+
 ## 4. Prioritas Eksekusi (Status Roadmap)
 
 | Tahap | Status | Fokus Utama | Nilai Tambah Pengguna |
@@ -131,13 +148,14 @@ Mencapai pengalaman bercakap-cakap yang setara dengan asisten masa depan:
 | **Tahap 2** | ✅ **Selesai** | **Paket 11: Intruder Sentry (Telegram Alert) & Auto-Healer** | MacBook aman saat ditinggal di kafe/kantor, Wi-Fi Watcher, dan pemulihan crash otomatis. |
 | **Tahap 3** | ✅ **Selesai** | **Paket 13: Interactive Canvas 2.0 & Floating HUD** | Visualisasi data server interaktif, live search/sort, HTML sandbox, form dinamis, dan Siri Shortcuts. |
 | **Tahap 4** | ✅ **Selesai** | **Paket 12: Real-Time Voice Duplex 2.0 (Gemini Live)** | Percakapan suara sub-detik (<400ms), interupsi alami instan (<50ms barge-in), dan modulasi vokal adaptif konteks. |
+| **Tahap 5** | ⏳ **Berikutnya** | **Paket 14: Dynamic Island Media Studio & Multi-Format Player** | Media manager, visualizer gelombang audio pada notch, music/video player, dan penampil gambar/galeri. |
 
 ---
 
-## 5. Ringkasan Eksekusi Seluruh Roadmap Generasi Berikutnya
+## 5. Rencana Aksi Segera (Next Immediate Action)
 
-Seluruh 4 paket utama dalam **Generasi Berikutnya (Next-Gen Roadmap)** telah selesai diimplementasikan 100%:
-1. **Paket 10: DevOps, Cloud & Database Command Center Suite** — Pod K8s monitor, Database Safe Explorer (read-only guardrails), Smart Git Commit & IDE Navigation.
-2. **Paket 11: Proactive Sentry & Autonomous Health Watchers** — Away Sentry Mode (Anti-Theft Camera/Telegram), LAN Wi-Fi Watcher, Container & Server Auto-Healer.
-3. **Paket 13: Interactive Canvas Studio 2.0 & Apple Ecosystem (Siri & Shortcuts)** — WebKit HTML sandbox, form interaktif dinamis, live table filter/sort, floating HUD always-on-top, dan Apple Shortcuts native runner/URL scheme.
-4. **Paket 12: Real-Time Full-Duplex Voice 2.0 & Context-Adaptive Vocalization** — Percakapan suara sub-detik (<400ms), interupsi alami instan (<50ms barge-in), dan 6 gaya persona vokal adaptif konteks (malam berbisik, siaga insiden, pagi ceria).
+Untuk melanjutkan implementasi berikutnya, fokus kita adalah **Tahap 5: Paket 14 (Dynamic Island Media Studio, Gallery & Multi-Format Player)**:
+1. Mengembangkan `MediaManagerService.swift` dan `AudioWaveformEngine.swift` untuk membaca metadata musik (Spotify / Apple Music / Local) dan menghasilkan animasi visualizer frekuensi gelombang audio.
+2. Membangun UI Notch Island Media (`NotchMediaStudioView.swift` & `IslandView.media`) dengan kartu Music Player, Video Replay, dan Image Viewer.
+3. Mengintegrasikan tipe artifact baru `.media` dan `.gallery` ke dalam Canvas Studio 2.0.
+4. Mendaftarkan tools LLM (`media_player_control`, `media_inspect_file`, `media_present_gallery`) dan routing URL scheme `coucou://media`.
