@@ -14,7 +14,11 @@ final class AutonomousAgent: @unchecked Sendable {
 
     /// Apakah mode otonom aktif (diaktifkan via onboarding / Settings).
     var enabled: Bool {
-        MainActor.assumeIsolated { AppState.shared.autonomousEnabled }
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { AppState.shared.autonomousEnabled }
+        } else {
+            return UserDefaults.standard.object(forKey: "autonomousEnabled") as? Bool ?? true
+        }
     }
 
     /// Terima tujuan baru. Jika ada tugas yang sedang berjalan, ditolak.

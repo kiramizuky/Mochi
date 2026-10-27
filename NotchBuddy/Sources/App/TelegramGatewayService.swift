@@ -260,15 +260,18 @@ public final class TelegramGatewayService: @unchecked Sendable {
     // MARK: - Remote Commands Execution
 
     private func handleVerifiedCommand(chatId: String, text: String, token: String) async {
-        guard !text.isEmpty else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let lower = trimmed.lowercased()
 
-        if text == "/start" || text == "/help" {
+        if lower == "/start" || lower == "/help" {
             let help = """
             🤖 *Coucou Mac Remote Assistant*
 
             Perintah yang tersedia:
             • `/status` - Cek status baterai, memori & Mochi di Mac
-            • `/screenshot` - Tangkap layar Mac dan kirim foto
+            • `/screenshot` (atau `/screenshoot`, `/ss`) - Tangkap layar Mac dan kirim foto
+            • `/camera` (atau `/photo`, `/webcam`) - Tangkap foto webcam FaceTime MacBook
             • `/canvas` - Lihat teks artefak Canvas Studio yang aktif
             • `/cancel` - Batalkan tugas otonom yang sedang berjalan
             • Atau *kirim instruksi langsung* untuk dieksekusi oleh Mac!
@@ -277,19 +280,25 @@ public final class TelegramGatewayService: @unchecked Sendable {
             return
         }
 
-        if text == "/status" {
+        if lower == "/status" {
             let status = await collectMacStatus()
             await sendMessage(chatId: chatId, text: status, token: token)
             return
         }
 
-        if text == "/screenshot" {
+        if lower == "/screenshot" || lower == "/screenshoot" || lower == "/ss" || lower == "/capture" || lower == "/screen" {
             await sendMessage(chatId: chatId, text: "📸 Mengambil tangkapan layar Mac...", token: token)
             await captureAndSendScreenshot(chatId: chatId, token: token)
             return
         }
 
-        if text == "/canvas" {
+        if lower == "/camera" || lower == "/photo" || lower == "/foto" || lower == "/webcam" {
+            await sendMessage(chatId: chatId, text: "📷 Mengambil foto dari kamera webcam MacBook...", token: token)
+            await captureAndSendWebcamPhoto(chatId: chatId, token: token)
+            return
+        }
+
+        if lower == "/canvas" {
             let artifactInfo = await MainActor.run { () -> String in
                 guard let art = CanvasManager.shared.currentArtifact else {
                     return "Tidak ada artefak aktif di Canvas Studio saat ini."
@@ -301,7 +310,7 @@ public final class TelegramGatewayService: @unchecked Sendable {
             return
         }
 
-        if text == "/cancel" {
+        if lower == "/cancel" {
             AutonomousAgent.shared.cancel()
             await MainActor.run {
                 AppState.shared.activePlaybookProgress = nil
@@ -345,11 +354,13 @@ public final class TelegramGatewayService: @unchecked Sendable {
     // MARK: - Mac System Diagnostics
 
     private func collectMacStatus() async -> String {
+        let battery = getBatteryPercentage()
+        let dateStr = ISO8601DateFormatter().string(from: Date())
+        let isAutoEnabled = UserDefaults.standard.object(forKey: "autonomousEnabled") as? Bool ?? true
+
         return await MainActor.run {
             let mode = AppState.shared.mode.rawValue
             let runningTask = AppState.shared.autonomousTasks.first(where: { $0.status == .running })?.goal ?? "Tidak ada (Idle)"
-            let battery = getBatteryPercentage()
-            let dateStr = ISO8601DateFormatter().string(from: Date())
 
             return """
             💻 *Status MacBook Coucou*
@@ -357,7 +368,7 @@ public final class TelegramGatewayService: @unchecked Sendable {
             • Island Mode: `\(mode)`
             • Daya/Baterai: `\(battery)`
             • Tugas Otonom: `\(runningTask)`
-            • Mode Otonom Aktif: `\(AppState.shared.autonomousEnabled ? "Ya" : "Tidak")`
+            • Mode Otonom Aktif: `\(isAutoEnabled ? "Ya" : "Tidak")`
             """
         }
     }
@@ -381,11 +392,12 @@ public final class TelegramGatewayService: @unchecked Sendable {
         return "Tersambung Listrik / Mac Desktop"
     }
 
-    // MARK: - Screenshot Capture & Dispatch
+    // MARK: - Screenshot & Webcam Capture & Dispatch
 
     private func captureAndSendScreenshot(chatId: String, token: String) async {
-        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("coucou-tg-ss.png")
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("coucou-tg-ss-\(Int(Date().timeIntervalSince1970)).png")
         try? FileManager.default.removeItem(at: tempFile)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
 
         let captured = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -395,46 +407,37 @@ public final class TelegramGatewayService: @unchecked Sendable {
                 do {
                     try p.run()
                     p.waitUntilExit()
-                    continuation.resume(returning: p.terminationStatus == 0)
+                    let exists = FileManager.default.fileExists(atPath: tempFile.path)
+                    continuation.resume(returning: p.terminationStatus == 0 && exists)
                 } catch {
                     continuation.resume(returning: false)
                 }
             }
         }
 
-        guard captured, let imageData = try? Data(contentsOf: tempFile) else {
-            await sendMessage(chatId: chatId, text: "⚠️ Gagal mengambil tangkapan layar (Izin Screen Recording mungkin diperlukan).", token: token)
+        guard captured, let imageData = try? Data(contentsOf: tempFile), !imageData.isEmpty else {
+            await sendMessage(chatId: chatId, text: "⚠️ Gagal mengambil tangkapan layar (Izin Screen Recording mungkin diperlukan di Pengaturan Sistem > Privasi & Keamanan > Perekaman Layar).", token: token)
             return
         }
 
-        defer { try? FileManager.default.removeItem(at: tempFile) }
+        let sent = await sendPhoto(imageData: imageData, caption: "🖥️ Tangkapan layar Mac saat ini", chatId: chatId, filename: "screenshot.png")
+        if !sent {
+            await sendMessage(chatId: chatId, text: "⚠️ Gagal mengunggah foto tangkapan layar ke Telegram.", token: token)
+        }
+    }
 
-        // Kirim via multipart form-data ke sendPhoto
-        let boundary = "Boundary-\(UUID().uuidString)"
-        guard let url = URL(string: "https://api.telegram.org/bot\(token)/sendPhoto") else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        var body = Data()
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(chatId)\r\n".data(using: .utf8)!)
-
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"caption\"\r\n\r\n".data(using: .utf8)!)
-        body.append("🖥️ Tangkapan layar Mac saat ini\r\n".data(using: .utf8)!)
-
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"photo\"; filename=\"screenshot.png\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: image/png\r\n\r\n".data(using: .utf8)!)
-        body.append(imageData)
-        body.append("\r\n".data(using: .utf8)!)
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-
-        request.httpBody = body
-        _ = try? await URLSession.shared.data(for: request)
+    private func captureAndSendWebcamPhoto(chatId: String, token: String) async {
+        do {
+            let res = try await WebcamCaptureService.shared.capturePhoto()
+            let facesInfo = res.detectedFacesCount > 0 ? ", \(res.detectedFacesCount) wajah terdeteksi" : ""
+            let caption = "📷 Foto Kamera Webcam (\(res.width)x\(res.height) px\(facesInfo))"
+            let sent = await sendPhoto(imageData: res.data, caption: caption, chatId: chatId, filename: "webcam.jpg")
+            if !sent {
+                await sendMessage(chatId: chatId, text: "⚠️ Gagal mengirim foto webcam ke Telegram.", token: token)
+            }
+        } catch {
+            await sendMessage(chatId: chatId, text: "⚠️ Gagal mengambil foto webcam: \(error.localizedDescription)", token: token)
+        }
     }
 
     // MARK: - Outbound Message Helper
@@ -483,9 +486,10 @@ public final class TelegramGatewayService: @unchecked Sendable {
         body.append("Content-Disposition: form-data; name=\"caption\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(caption)\r\n".data(using: .utf8)!)
 
+        let mimeType = filename.lowercased().hasSuffix(".png") ? "image/png" : "image/jpeg"
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"photo\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
         body.append(imageData)
         body.append("\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)

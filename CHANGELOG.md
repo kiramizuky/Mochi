@@ -29,6 +29,18 @@
 
 ### macOS
 
+- **Perbaikan Bug Force Close / Crash Perintah Telegram & Thread-Safety Autonomous Agent**:
+  - 🛡️ **Pencegahan Crash `_dispatch_assert_queue_fail` pada `AutonomousAgent.enabled`**:
+    - Memperbaiki akar penyebab *crash* seketika (*SIGILL / Illegal Instruction 4*) saat perintah diterima via Telegram background cooperative pool. Sebelumnya `AutonomousAgent.enabled` memanggil `MainActor.assumeIsolated` tanpa memeriksa apakah thread saat itu adalah main thread.
+    - Mengganti akses property `enabled` dengan pengecekan thread-safe: jika berada di main thread menggunakan `MainActor.assumeIsolated`, dan jika di background thread membaca langsung `UserDefaults.standard` (`autonomousEnabled`), sehingga 100% aman dan tidak pernah memicu kegagalan antrean.
+  - 📸 **Toleransi Perintah Screenshot & Tangkapan Layar Telegram**:
+    - Mendukung variasi dan toleransi salah ketik pengguna pada perintah tangkapan layar Telegram: `/screenshot`, `/screenshoot` (dengan double 'o'), `/ss`, `/capture`, dan `/screen`.
+    - Mengintegrasikan pengiriman file gambar via `sendPhoto` terpusat dengan MIME type yang tepat (`image/png`).
+  - 📷 **Perintah Baru Telegram untuk Kamera Webcam (`/camera`, `/photo`, `/webcam`)**:
+    - Menambahkan perintah remote langsung di Telegram untuk mengambil foto webcam FaceTime MacBook (`/camera`, `/photo`, `/webcam`) dan mengirim foto resolusi tinggi ke obrolan Telegram.
+  - ⚡ **Optimasi Diagnostik Sistem `collectMacStatus`**:
+    - Memindahkan pemanggilan proses shell pembacaan status baterai `pmset -g batt` keluar dari `MainActor.run` agar tidak memblokir antarmuka pengguna (UI thread).
+
 - **Perbaikan Total Webcam Capture, Perekaman Video FaceTime HD & Pendaftaran Wajah Pemilik (Face Enrollment)**:
   - 📸 **Pipeline Capture Frame Instan via `AVCaptureVideoDataOutput`**:
     - Memperbaiki akar masalah kegagalan pengambilan foto di macOS FaceTime HD Camera di mana `AVCapturePhotoOutput` sebelumnya hang tanpa batas waktu (*infinite timeout*) akibat pelepasan memori (*weak reference deallocation*) pada delegate lokal di macOS.
