@@ -9,6 +9,8 @@ public enum ArtifactType: String, Codable, Sendable, CaseIterable {
     case chart    = "chart"      // Diagram alur, Mermaid, ASCII chart
     case html     = "html"       // Live Web Sandbox / Visualisasi HTML5
     case form     = "form"       // Form input & widget interaktif
+    case media    = "media"      // Pemutar Audio / Video Layar Lebar
+    case gallery  = "gallery"    // Galeri Foto / Screenshot Multi-Kolom
 
     public var iconName: String {
         switch self {
@@ -18,6 +20,8 @@ public enum ArtifactType: String, Codable, Sendable, CaseIterable {
         case .chart:    return "chart.bar.xaxis"
         case .html:     return "globe.americas.fill"
         case .form:     return "slider.horizontal.3"
+        case .media:    return "play.rectangle.fill"
+        case .gallery:  return "photo.on.rectangle.angled"
         }
     }
 
@@ -29,6 +33,8 @@ public enum ArtifactType: String, Codable, Sendable, CaseIterable {
         case .chart:    return "Diagram"
         case .html:     return "Web Sandbox"
         case .form:     return "Form Interaktif"
+        case .media:    return "Media Studio"
+        case .gallery:  return "Galeri Media"
         }
     }
 }

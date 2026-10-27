@@ -173,6 +173,33 @@ public final class AppleShortcutsService: @unchecked Sendable {
             }
             return "Audit Auto-Healer container & server dipicu via Shortcuts/Siri."
 
+        case "media", "player":
+            let act = queryParams["action"] ?? queryParams["a"] ?? "toggle"
+            let targetFile = queryParams["target"] ?? queryParams["file"] ?? queryParams["path"]
+
+            if let file = targetFile, !file.isEmpty {
+                let res = MediaManagerService.shared.inspectAndPresentMedia(path: file, presentInNotch: true, presentInCanvas: false)
+                return res.message
+            }
+
+            switch act {
+            case "play", "resume":
+                MediaManagerService.shared.resumePlayback()
+                return "Media play dipicu via Shortcuts/Siri."
+            case "pause", "stop":
+                MediaManagerService.shared.pausePlayback()
+                return "Media pause dipicu via Shortcuts/Siri."
+            case "next":
+                MediaManagerService.shared.nextTrack()
+                return "Media next track dipicu via Shortcuts/Siri."
+            case "previous", "prev":
+                MediaManagerService.shared.previousTrack()
+                return "Media previous track dipicu via Shortcuts/Siri."
+            default:
+                MediaManagerService.shared.togglePlayPause()
+                return "Media toggle play/pause dipicu via Shortcuts/Siri."
+            }
+
         default:
             return "Aksi URL scheme tidak dikenali: '\(action)'"
         }

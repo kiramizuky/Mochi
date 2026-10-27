@@ -120,6 +120,7 @@ final class ToolExecutor: @unchecked Sendable {
         sentryTrustDeviceDef, sentryAutohealCheckDef,
         shortcutsListShortcutsDef, shortcutsRunShortcutDef, canvasPresentWidgetDef,
         voiceSetModeDef, voiceStatusDef,
+        mediaPlayerControlDef, mediaInspectFileDef, mediaPresentGalleryDef, mediaListRecentDef,
     ]
 
     /// Semua alat yang tersedia termasuk alat dinamis yang disintesis on-the-fly.
@@ -1312,6 +1313,63 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    // MARK: - Dynamic Island Media Studio, Gallery & Player (Paket 14)
+    static let mediaPlayerControlDef = LLMToolDef(
+        name: "media_player_control",
+        description: "Kontrol pemutaran media cerdas (Spotify, Apple Music, atau Pemutar Audio Lokal): play, pause, toggle, next, previous, seek (lompat ke detik tertentu), dan volume.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "action": .object(["type": .string("string"), "description": .string("Aksi pemutar: 'play', 'pause', 'toggle', 'next', 'previous', 'seek', 'volume'.")]),
+                "volume": .object(["type": .string("number"), "description": .string("Level suara 0.0 s.d. 1.0 (opsional).")]),
+                "seek_seconds": .object(["type": .string("number"), "description": .string("Posisi lompat playback dalam detik (opsional).")]),
+            ]),
+            "required": .array([.string("action")]),
+        ])
+    )
+
+    static let mediaInspectFileDef = LLMToolDef(
+        name: "media_inspect_file",
+        description: "Inspeksi metadata berkas foto, video, atau musik lokal (dimensi, resolusi, durasi, ukuran file) dan tampilkan kartu pemutar interaktifnya di Notch Island atau Canvas Studio.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "file_path": .object(["type": .string("string"), "description": .string("Path absolut atau tilde berkas media (foto, video MP4/MOV, atau audio MP3/WAV/FLAC).")]),
+                "present_in": .object(["type": .string("string"), "description": .string("Tujuan tampilan: 'notch', 'canvas', atau 'both' (opsional, default: 'both').")]),
+            ]),
+            "required": .array([.string("file_path")]),
+        ])
+    )
+
+    static let mediaPresentGalleryDef = LLMToolDef(
+        name: "media_present_gallery",
+        description: "Menampilkan galeri foto atau screenshot ke jendela Canvas Studio 2.0 dengan tata letak kisi-kisi (grid multi-kolom), filter pencarian instan, dan modal lightbox.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "folder_path": .object(["type": .string("string"), "description": .string("Direktori folder yang berisi foto/screenshot (opsional, default: Screenshots & Desktop).")]),
+                "files": .object([
+                    "type": .string("array"),
+                    "description": .string("Daftar path berkas gambar spesifik (opsional)."),
+                    "items": .object(["type": .string("string")])
+                ]),
+                "title": .object(["type": .string("string"), "description": .string("Judul galeri di Canvas Studio (opsional).")]),
+            ]),
+        ])
+    )
+
+    static let mediaListRecentDef = LLMToolDef(
+        name: "media_list_recent",
+        description: "Melihat daftar tangkapan layar (screenshots), rekaman layar, atau unduhan berkas media terbaru beserta ukuran dan statusnya.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "category": .object(["type": .string("string"), "description": .string("Kategori media: 'screenshots', 'downloads', atau 'all' (opsional, default: 'all').")]),
+                "limit": .object(["type": .string("integer"), "description": .string("Jumlah berkas maksimal yang diambil (opsional, default: 10).")]),
+            ]),
+        ])
+    )
+
     static let officeListSheetsDef = LLMToolDef(
         name: "office_list_sheets",
         description: "List all worksheet/tab names in the active Microsoft Excel or Numbers workbook.",
@@ -1601,6 +1659,16 @@ final class ToolExecutor: @unchecked Sendable {
         "voice_mode": "voice_set_mode",
         "duplex_voice": "voice_set_mode",
         "voice_info": "voice_status",
+        "player_control": "media_player_control",
+        "play_music": "media_player_control",
+        "pause_music": "media_player_control",
+        "inspect_image": "media_inspect_file",
+        "inspect_media": "media_inspect_file",
+        "open_gallery": "media_present_gallery",
+        "show_gallery": "media_present_gallery",
+        "play_video": "media_inspect_file",
+        "recent_screenshots": "media_list_recent",
+        "recent_media": "media_list_recent",
     ]
 
     /// Short, human-readable target for UI events and audit records.
@@ -1702,6 +1770,10 @@ final class ToolExecutor: @unchecked Sendable {
         case "canvas_present_widget":   raw = input["title"]?.stringValue
         case "voice_set_mode":          raw = input["persona_style"]?.stringValue ?? "voice_set"
         case "voice_status":            raw = "voice_status"
+        case "media_player_control":    raw = input["action"]?.stringValue ?? "player_control"
+        case "media_inspect_file":      raw = input["file_path"]?.stringValue
+        case "media_present_gallery":   raw = input["title"]?.stringValue ?? "gallery"
+        case "media_list_recent":       raw = input["category"]?.stringValue ?? "recent_media"
         default:               raw = nil
         }
         let value = raw?.isEmpty == false ? raw! : name
@@ -1841,6 +1913,10 @@ final class ToolExecutor: @unchecked Sendable {
         case "canvas_present_widget":   category = .read;  target = input["title"]?.stringValue ?? "canvas_widget"
         case "voice_set_mode":          category = .appControl; target = input["persona_style"]?.stringValue ?? "voice_set_mode"
         case "voice_status":            category = .read;  target = "voice_status"
+        case "media_player_control":    category = .appControl; target = input["action"]?.stringValue ?? "media_control"
+        case "media_inspect_file":      category = .read;  target = input["file_path"]?.stringValue ?? "media_file"
+        case "media_present_gallery":   category = .read;  target = input["title"]?.stringValue ?? "media_gallery"
+        case "media_list_recent":       category = .read;  target = "recent_media"
         default:
             if let dyn = DynamicToolSynthesizer.shared.getTool(id: name) {
                 category = .shell
@@ -2368,6 +2444,61 @@ final class ToolExecutor: @unchecked Sendable {
                 """
             }
             return ToolResult(output: msg)
+        case "media_player_control":
+            let act = input["action"]?.stringValue ?? "toggle"
+            let vol = input["volume"]?.numberValue
+            let seekSec = input["seek_seconds"]?.numberValue
+            if let v = vol {
+                await MainActor.run {
+                    MediaManagerService.shared.setPlaybackVolume(v)
+                }
+            }
+            if let s = seekSec {
+                await MainActor.run {
+                    MediaManagerService.shared.seek(to: s)
+                }
+            }
+            let res = await MediaManagerService.shared.controlPlayback(action: act)
+            return ToolResult(output: res.message)
+        case "media_inspect_file":
+            guard let path = input["file_path"]?.stringValue, !path.isEmpty else {
+                return ToolResult(output: "Argumen 'file_path' diperlukan untuk media_inspect_file.", isError: true, exitCode: 1)
+            }
+            let target = input["present_in"]?.stringValue?.lowercased() ?? "both"
+            let inNotch = target == "notch" || target == "both"
+            let inCanvas = target == "canvas" || target == "both"
+            let res = await MainActor.run {
+                MediaManagerService.shared.inspectAndPresentMedia(path: path, presentInNotch: inNotch, presentInCanvas: inCanvas)
+            }
+            return ToolResult(output: res.message, isError: !res.success)
+        case "media_present_gallery":
+            let folder = input["folder_path"]?.stringValue
+            let filePaths: [String]?
+            if case .array(let arr) = input["files"] {
+                filePaths = arr.compactMap { $0.stringValue }
+            } else {
+                filePaths = nil
+            }
+            let title = input["title"]?.stringValue
+            let res = await MainActor.run {
+                MediaManagerService.shared.presentGalleryInCanvas(paths: filePaths, folderPath: folder, title: title)
+            }
+            return ToolResult(output: res.message, isError: !res.success)
+        case "media_list_recent":
+            let cat = input["category"]?.stringValue ?? "all"
+            let limit = input["limit"]?.numberValue.map { Int($0) } ?? 10
+            let items = await MainActor.run {
+                MediaManagerService.shared.listRecentMedia(category: cat, limit: limit)
+            }
+            if items.isEmpty {
+                return ToolResult(output: "Tidak ada media terbaru yang ditemukan untuk kategori '\(cat)'.")
+            }
+            var out = "📁 Daftar Media Terbaru (\(items.count) item):\n"
+            for (idx, item) in items.enumerated() {
+                let path = item.fileURL?.path ?? "-"
+                out += "\(idx + 1). [\(item.mediaType.rawValue.uppercased())] \(item.title) (\(item.artist)) • \(item.fileSizeFormatted ?? "-")\n   Lokasi: \(path)\n"
+            }
+            return ToolResult(output: out)
         default:
             if let _ = DynamicToolSynthesizer.shared.getTool(id: name) {
                 var args: [String: String] = [:]

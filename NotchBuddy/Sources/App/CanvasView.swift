@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
 import WebKit
+import AVFoundation
+import AVKit
 
 // MARK: - Canvas View (Artifacts Studio UI & Interactive HUD)
 
@@ -17,6 +19,12 @@ public struct CanvasView: View {
     @State private var formSubmitted: Bool = false
     @State private var formOutput: String? = nil
 
+    // State untuk Media Studio & Gallery
+    @State private var selectedGalleryItem: GalleryItem? = nil
+    @State private var gallerySearch: String = ""
+    @State private var canvasAudioProgress: Double = 0.0
+    @State private var canvasAudioTimer: Timer? = nil
+
     enum ViewMode: String, CaseIterable {
         case formatted = "Preview"
         case raw       = "Raw Teks"
@@ -25,64 +33,83 @@ public struct CanvasView: View {
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 0) {
-            // Header Bar dengan HUD & Pinning Controls
-            headerBar
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.ultraThinMaterial)
+        ZStack {
+            VStack(spacing: 0) {
+                // Header Bar dengan HUD & Pinning Controls
+                headerBar
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
 
-            Divider()
-                .opacity(0.3)
+                Divider()
+                    .opacity(0.3)
 
-            // Content Area
-            if let artifact = manager.currentArtifact {
-                ZStack {
-                    Color(nsColor: .windowBackgroundColor).opacity(0.5)
+                // Content Area
+                if let artifact = manager.currentArtifact {
+                    ZStack {
+                        Color(nsColor: .windowBackgroundColor).opacity(0.5)
 
-                    VStack(spacing: 0) {
-                        switch artifact.type {
-                        case .table:
-                            if viewMode == .formatted {
-                                tableGridView(content: artifact.content)
-                            } else {
-                                rawTextView(content: artifact.content)
-                            }
-                        case .code:
-                            codeSnippetView(content: artifact.content)
-                        case .document, .chart:
-                            if viewMode == .formatted {
-                                documentMarkdownView(content: artifact.content)
-                            } else {
-                                rawTextView(content: artifact.content)
-                            }
-                        case .html:
-                            if viewMode == .formatted {
-                                htmlSandboxView(content: artifact.content)
-                            } else {
-                                rawTextView(content: artifact.content)
-                            }
-                        case .form:
-                            if viewMode == .formatted {
-                                interactiveFormView(content: artifact.content)
-                            } else {
-                                rawTextView(content: artifact.content)
+                        VStack(spacing: 0) {
+                            switch artifact.type {
+                            case .table:
+                                if viewMode == .formatted {
+                                    tableGridView(content: artifact.content)
+                                } else {
+                                    rawTextView(content: artifact.content)
+                                }
+                            case .code:
+                                codeSnippetView(content: artifact.content)
+                            case .document, .chart:
+                                if viewMode == .formatted {
+                                    documentMarkdownView(content: artifact.content)
+                                } else {
+                                    rawTextView(content: artifact.content)
+                                }
+                            case .html:
+                                if viewMode == .formatted {
+                                    htmlSandboxView(content: artifact.content)
+                                } else {
+                                    rawTextView(content: artifact.content)
+                                }
+                            case .form:
+                                if viewMode == .formatted {
+                                    interactiveFormView(content: artifact.content)
+                                } else {
+                                    rawTextView(content: artifact.content)
+                                }
+                            case .media:
+                                if viewMode == .formatted {
+                                    canvasMediaStudioView(content: artifact.content, metadata: artifact.metadata)
+                                } else {
+                                    rawTextView(content: artifact.content)
+                                }
+                            case .gallery:
+                                if viewMode == .formatted {
+                                    canvasGalleryGridView(content: artifact.content, metadata: artifact.metadata)
+                                } else {
+                                    rawTextView(content: artifact.content)
+                                }
                             }
                         }
                     }
+                } else {
+                    emptyStateView
                 }
-            } else {
-                emptyStateView
+
+                Divider()
+                    .opacity(0.3)
+
+                // Footer Bar
+                footerBar
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
             }
 
-            Divider()
-                .opacity(0.3)
-
-            // Footer Bar
-            footerBar
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial)
+            // Lightbox Modal Overlay untuk Galeri
+            if let item = selectedGalleryItem {
+                galleryLightboxOverlay(item: item)
+            }
         }
         .frame(minWidth: 620, minHeight: 480)
     }
@@ -694,6 +721,492 @@ public struct CanvasView: View {
         }
         return FormSpecification(title: "Formulir Interaktif", description: "Isi data formulir berikut untuk melanjutkan aksi.", fields: fields, submitLabel: "Jalankan Aksi")
     }
+
+    // MARK: - Media Studio View (Audio & Video Layar Lebar)
+
+    private func canvasMediaStudioView(content: String, metadata: [String: String]) -> some View {
+        let title = metadata["title"] ?? "Media Player"
+        let artist = metadata["artist"] ?? "Coucou Media Studio"
+        let album = metadata["album"] ?? "Studio Track"
+        let filePath = metadata["filePath"]
+        let isVideo = metadata["mediaType"] == "video" || (filePath?.lowercased().hasSuffix(".mp4") == true || filePath?.lowercased().hasSuffix(".mov") == true)
+        let fileURL = filePath.map { URL(fileURLWithPath: $0) }
+        let durationSec = Double(metadata["duration"] ?? "180") ?? 180.0
+
+        return ScrollView(.vertical) {
+            VStack(spacing: 20) {
+                if isVideo, let url = fileURL {
+                    // Video Player Layar Lebar
+                    VStack(alignment: .leading, spacing: 10) {
+                        CanvasVideoPlayerView(url: url)
+                            .frame(height: 340)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
+
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(title)
+                                    .font(.system(size: 15, weight: .bold))
+                                Text(url.lastPathComponent)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            Button {
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                            } label: {
+                                Label("Buka di Finder", systemImage: "folder")
+                                    .font(.system(size: 11))
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button {
+                                _ = MediaManagerService.shared.inspectAndPresentMedia(path: url.path, presentInNotch: true, presentInCanvas: false)
+                            } label: {
+                                Label("Putar di Notch", systemImage: "iphone")
+                                    .font(.system(size: 11))
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .padding(20)
+                } else {
+                    // Audio Music Player Mewah Layar Lebar
+                    VStack(spacing: 16) {
+                        HStack(spacing: 24) {
+                            // Cover Art Ambient Glow
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color.accentColor.opacity(0.6), Color.purple.opacity(0.6)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(width: 140, height: 140)
+                                    .blur(radius: 20)
+                                    .opacity(0.5)
+
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color.accentColor.opacity(0.8), Color.purple.opacity(0.8)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(width: 130, height: 130)
+                                    .overlay(
+                                        Image(systemName: "music.note")
+                                            .font(.system(size: 48, weight: .bold))
+                                            .foregroundColor(.white.opacity(0.9))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    )
+                            }
+
+                            // Metadata & Waveform
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(title)
+                                            .font(.system(size: 18, weight: .bold))
+                                            .lineLimit(1)
+                                        Text("\(artist) • \(album)")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    Button {
+                                        if let path = filePath {
+                                            _ = MediaManagerService.shared.inspectAndPresentMedia(path: path, presentInNotch: true, presentInCanvas: false)
+                                        } else {
+                                            AppState.shared.view = .media
+                                            AppState.shared.mode = .expanded
+                                        }
+                                    } label: {
+                                        Label("Putar di Notch", systemImage: "iphone")
+                                            .font(.system(size: 11))
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+
+                                // 24-Bar Live Equalizer Spectrum
+                                HStack(alignment: .bottom, spacing: 4) {
+                                    ForEach(0..<24, id: \.self) { idx in
+                                        let height = CGFloat(8 + (idx * 5) % 24)
+                                        RoundedRectangle(cornerRadius: 1.5)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [Color.accentColor, Color.purple],
+                                                    startPoint: .bottom,
+                                                    endPoint: .top
+                                                )
+                                            )
+                                            .frame(width: 4, height: height)
+                                    }
+                                }
+                                .frame(height: 36)
+                                .padding(.vertical, 4)
+
+                                // Scrubber Slider
+                                VStack(spacing: 4) {
+                                    Slider(value: $canvasAudioProgress, in: 0...max(1.0, durationSec)) { _ in
+                                        MediaManagerService.shared.seek(to: canvasAudioProgress)
+                                    }
+                                    .accentColor(.accentColor)
+
+                                    HStack {
+                                        let curMin = Int(canvasAudioProgress) / 60
+                                        let curSec = Int(canvasAudioProgress) % 60
+                                        Text(String(format: "%02d:%02d", curMin, curSec))
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        let durMin = Int(durationSec) / 60
+                                        let durSec = Int(durationSec) % 60
+                                        Text(String(format: "%02d:%02d", durMin, durSec))
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+
+                                // Kontrol Playback
+                                HStack(spacing: 20) {
+                                    Button {
+                                        MediaManagerService.shared.previousTrack()
+                                    } label: {
+                                        Image(systemName: "backward.fill")
+                                            .font(.system(size: 14))
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        MediaManagerService.shared.togglePlayPause()
+                                    } label: {
+                                        Image(systemName: MediaManagerService.shared.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                            .font(.system(size: 30))
+                                            .foregroundColor(.accentColor)
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        MediaManagerService.shared.nextTrack()
+                                    } label: {
+                                        Image(systemName: "forward.fill")
+                                            .font(.system(size: 14))
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Spacer()
+
+                                    // Volume Control
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "speaker.wave.1.fill")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                        Slider(
+                                            value: Binding(
+                                                get: { MediaManagerService.shared.volume },
+                                                set: { MediaManagerService.shared.setPlaybackVolume($0) }
+                                            ),
+                                            in: 0.0...1.0
+                                        )
+                                        .frame(width: 80)
+                                        Image(systemName: "speaker.wave.3.fill")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(20)
+                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .padding(20)
+                }
+
+                // Catatan / Rincian Media
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Informasi & Catatan Berkas")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.secondary)
+
+                    documentMarkdownView(content: content)
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    // MARK: - Gallery Grid View (Multi-Kolom Foto & Screenshots)
+
+    private func canvasGalleryGridView(content: String, metadata: [String: String]) -> some View {
+        let items = parseGalleryItems(content)
+        let filtered = items.filter { item in
+            if gallerySearch.isEmpty { return true }
+            return item.title.localizedCaseInsensitiveContains(gallerySearch) ||
+                   item.format.localizedCaseInsensitiveContains(gallerySearch)
+        }
+
+        return VStack(spacing: 0) {
+            // Toolbar Pencarian Galeri
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("Cari foto atau screenshot...", text: $gallerySearch)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                Text("\(filtered.count) berkas")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Button {
+                    let home = FileManager.default.homeDirectoryForCurrentUser
+                    let screenshots = home.appendingPathComponent("Pictures/Screenshots")
+                    NSWorkspace.shared.open(screenshots)
+                } label: {
+                    Label("Screenshots", systemImage: "folder")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial.opacity(0.5))
+
+            Divider().opacity(0.3)
+
+            // Grid Multi-Kolom
+            ScrollView(.vertical) {
+                if filtered.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: 32))
+                            .foregroundColor(.secondary.opacity(0.6))
+                        Text("Tidak ada berkas gambar yang cocok")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 200)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 14)], spacing: 14) {
+                        ForEach(filtered) { item in
+                            galleryCardCell(item: item)
+                                .onTapGesture {
+                                    withAnimation(.spring(response: 0.3)) {
+                                        selectedGalleryItem = item
+                                    }
+                                }
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+    }
+
+    private func galleryCardCell(item: GalleryItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack(alignment: .topTrailing) {
+                if let img = NSImage(contentsOfFile: item.filePath) {
+                    Image(nsImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 110)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(height: 110)
+                        .overlay(
+                            Image(systemName: "photo")
+                                .font(.system(size: 28))
+                                .foregroundColor(.secondary)
+                        )
+                }
+
+                // Badge Format
+                Text(item.format)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.7))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(6)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                    .foregroundColor(.primary)
+
+                HStack {
+                    Text(item.size)
+                    Spacer()
+                    Text(item.date)
+                }
+                .font(.system(size: 9))
+                .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 2)
+        }
+        .padding(8)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Lightbox Modal Dialog
+
+    private func galleryLightboxOverlay(item: GalleryItem) -> some View {
+        ZStack {
+            Color.black.opacity(0.85)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation { selectedGalleryItem = nil }
+                }
+
+            VStack(spacing: 16) {
+                // Header Lightbox
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                        Text("\(item.format) • \(item.size) • \(item.date)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        withAnimation { selectedGalleryItem = nil }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+
+                // Preview Gambar Utama
+                if let img = NSImage(contentsOfFile: item.filePath) {
+                    Image(nsImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 420)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .shadow(color: .black.opacity(0.6), radius: 16, y: 8)
+                }
+
+                // Footer Aksi Lightbox
+                HStack(spacing: 12) {
+                    Button {
+                        if let img = NSImage(contentsOfFile: item.filePath) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.writeObjects([img])
+                        }
+                    } label: {
+                        Label("Salin Gambar", systemImage: "doc.on.doc")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        let url = URL(fileURLWithPath: item.filePath)
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    } label: {
+                        Label("Tampilkan di Finder", systemImage: "folder")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        _ = MediaManagerService.shared.inspectAndPresentMedia(path: item.filePath, presentInNotch: true, presentInCanvas: false)
+                        withAnimation { selectedGalleryItem = nil }
+                    } label: {
+                        Label("Buka di Notch", systemImage: "iphone")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(.bottom, 20)
+            }
+            .frame(maxWidth: 640)
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.5), radius: 30)
+            .padding(24)
+        }
+    }
+
+    // MARK: - Helpers Parsing Galeri
+
+    private func parseGalleryItems(_ content: String) -> [GalleryItem] {
+        // Coba JSON Array
+        if let data = content.data(using: .utf8),
+           let rawArray = try? JSONSerialization.jsonObject(with: data) as? [[String: String]] {
+            return rawArray.map { dict in
+                let path = dict["filePath"] ?? ""
+                let title = dict["title"] ?? (path as NSString).lastPathComponent
+                let size = dict["size"] ?? "-"
+                let date = dict["date"] ?? "-"
+                let format = dict["format"] ?? ((path as NSString).pathExtension.uppercased())
+                return GalleryItem(filePath: path, title: title, size: size, date: date, format: format)
+            }
+        }
+
+        // Fallback: Pemindaian path baris demi baris
+        let lines = content.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        var result: [GalleryItem] = []
+        for line in lines {
+            let path = (line.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath
+            if FileManager.default.fileExists(atPath: path) {
+                let url = URL(fileURLWithPath: path)
+                let attr = (try? FileManager.default.attributesOfItem(atPath: path)) ?? [:]
+                let size = (attr[.size] as? NSNumber)?.int64Value ?? 0
+                let sizeStr = size > 1_048_576 ? String(format: "%.1f MB", Double(size) / 1_048_576.0) : "\(size / 1024) KB"
+                result.append(GalleryItem(
+                    filePath: path,
+                    title: url.lastPathComponent,
+                    size: sizeStr,
+                    date: "Tersimpan",
+                    format: url.pathExtension.uppercased()
+                ))
+            }
+        }
+        return result
+    }
 }
 
 // MARK: - Native WebKit Representable for HTML Sandbox
@@ -729,4 +1242,32 @@ struct FormField: Codable {
     var placeholder: String?
     var defaultValue: String?
     var options: [String]?
+}
+
+// MARK: - Gallery Data Model
+
+struct GalleryItem: Identifiable, Equatable {
+    var id: String { filePath }
+    var filePath: String
+    var title: String
+    var size: String
+    var date: String
+    var format: String
+}
+
+// MARK: - Native Video Player for Canvas
+
+struct CanvasVideoPlayerView: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let playerView = AVPlayerView()
+        let player = AVPlayer(url: url)
+        playerView.player = player
+        playerView.controlsStyle = .floating
+        playerView.showsFullScreenToggleButton = true
+        return playerView
+    }
+
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {}
 }

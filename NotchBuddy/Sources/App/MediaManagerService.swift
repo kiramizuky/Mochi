@@ -345,5 +345,268 @@ public final class MediaManagerService: ObservableObject {
         AppState.shared.view = .media
         AppState.shared.mode = .expanded
     }
+
+    // MARK: - 4. Interaksi Cepat & Helper Pemutar
+
+    public func controlPlayback(action: String) async -> (success: Bool, message: String) {
+        await executeAction(action)
+    }
+
+    public func resumePlayback() {
+        Task { _ = await controlPlayback(action: "play") }
+    }
+
+    public func pausePlayback() {
+        Task { _ = await controlPlayback(action: "pause") }
+    }
+
+    public func togglePlayPause() {
+        Task { _ = await controlPlayback(action: "toggle") }
+    }
+
+    public func nextTrack() {
+        Task { _ = await controlPlayback(action: "next") }
+    }
+
+    public func previousTrack() {
+        Task { _ = await controlPlayback(action: "previous") }
+    }
+
+    public func seek(to seconds: Double) {
+        if currentItem?.source == .localAudio {
+            AudioPlaybackService.shared.seek(to: seconds)
+            self.currentItem?.position = seconds
+            syncToAppState()
+        }
+    }
+
+    // MARK: - 5. Inspeksi File Media & Tampilan ke Notch / Canvas
+
+    /// Menganalisis berkas media lokal dan menampilkannya di Notch Island dan/atau Canvas Studio
+    public func inspectAndPresentMedia(
+        path: String,
+        presentInNotch: Bool = true,
+        presentInCanvas: Bool = false
+    ) -> (success: Bool, item: MediaItem?, message: String) {
+        let expandedPath = (path as NSString).expandingTildeInPath
+        let fileURL = URL(fileURLWithPath: expandedPath)
+
+        guard FileManager.default.fileExists(atPath: expandedPath) else {
+            return (false, nil, "Berkas tidak ditemukan pada lokasi: \(expandedPath)")
+        }
+
+        let ext = fileURL.pathExtension.lowercased()
+        let audioExts = ["mp3", "m4a", "wav", "aac", "flac", "aiff", "ogg"]
+        let videoExts = ["mp4", "mov", "m4v", "mkv", "webm", "avi"]
+        let imageExts = ["png", "jpg", "jpeg", "webp", "heic", "gif", "bmp", "tiff"]
+
+        let mediaType: MediaType
+        let mediaSource: MediaSource
+
+        if audioExts.contains(ext) {
+            mediaType = .music
+            mediaSource = .localAudio
+        } else if videoExts.contains(ext) {
+            mediaType = .video
+            mediaSource = .localVideo
+        } else if imageExts.contains(ext) {
+            mediaType = .image
+            mediaSource = .localImage
+        } else {
+            return (false, nil, "Format berkas .\(ext) tidak didukung sebagai media.")
+        }
+
+        // Hitung ukuran berkas
+        let attr = (try? FileManager.default.attributesOfItem(atPath: expandedPath)) ?? [:]
+        let fileSize = (attr[.size] as? NSNumber)?.int64Value ?? 0
+        let formattedSize = fileSize > 1_048_576 ? String(format: "%.1f MB", Double(fileSize) / 1_048_576.0) : "\(fileSize / 1024) KB"
+
+        var dimensions: CGSize? = nil
+        var duration: Double = 0.0
+
+        if mediaType == .image {
+            if let img = NSImage(contentsOfFile: expandedPath) {
+                dimensions = img.size
+            }
+        } else {
+            let asset = AVURLAsset(url: fileURL)
+            duration = CMTimeGetSeconds(asset.duration)
+            if duration.isNaN { duration = 0.0 }
+        }
+
+        let item = MediaItem(
+            id: expandedPath,
+            title: fileURL.deletingPathExtension().lastPathComponent,
+            artist: mediaSource.displayName,
+            album: ext.uppercased(),
+            duration: duration,
+            position: 0.0,
+            source: mediaSource,
+            mediaType: mediaType,
+            fileURL: fileURL,
+            fileSizeFormatted: formattedSize,
+            dimensions: dimensions
+        )
+
+        if presentInNotch {
+            presentMediaInNotch(item)
+        }
+
+        if presentInCanvas {
+            if mediaType == .image {
+                _ = presentGalleryInCanvas(paths: [expandedPath], folderPath: nil, title: "Inspeksi Foto: \(item.title)")
+            } else {
+                presentMediaInCanvas(item)
+            }
+        }
+
+        let dimMsg = dimensions.map { " (\(Int($0.width))×\(Int($0.height)) px)" } ?? ""
+        let durMsg = duration > 0 ? " [\(Int(duration / 60)):\(String(format: "%02d", Int(duration.truncatingRemainder(dividingBy: 60))))]" : ""
+        let msg = "Media '\(item.title).\(ext)' berhasil diinspeksi\(dimMsg)\(durMsg) - \(formattedSize)."
+        return (true, item, msg)
+    }
+
+    /// Menampilkan pemutar audio/video layar lebar di Canvas Studio
+    public func presentMediaInCanvas(_ item: MediaItem) {
+        let title = "Media Studio: \(item.title)"
+        var metadata: [String: String] = [
+            "title": item.title,
+            "artist": item.artist,
+            "album": item.album,
+            "source": item.source.rawValue,
+            "mediaType": item.mediaType.rawValue,
+            "duration": "\(Int(item.duration))",
+            "fileSize": item.fileSizeFormatted ?? "Unknown"
+        ]
+        if let path = item.fileURL?.path {
+            metadata["filePath"] = path
+        }
+
+        let content = """
+        # \(item.title)
+        **Artis**: \(item.artist.isEmpty ? "Artis Tidak Diketahui" : item.artist)
+        **Album**: \(item.album)
+        **Durasi**: \(Int(item.duration / 60)):\(String(format: "%02d", Int(item.duration.truncatingRemainder(dividingBy: 60))))
+        **Ukuran**: \(item.fileSizeFormatted ?? "-")
+        **Lokasi**: \(item.fileURL?.path ?? "Streaming / Remote")
+        """
+
+        let artifact = CanvasArtifact(
+            id: "media-\(UUID().uuidString.prefix(6))",
+            title: title,
+            type: .media,
+            content: content,
+            metadata: metadata
+        )
+        CanvasManager.shared.present(artifact: artifact)
+    }
+
+    /// Menampilkan galeri foto/screenshot ke Canvas Studio
+    public func presentGalleryInCanvas(
+        paths: [String]? = nil,
+        folderPath: String? = nil,
+        title: String? = nil
+    ) -> (success: Bool, count: Int, message: String) {
+        var targets: [URL] = []
+        let fm = FileManager.default
+        let imageExts = ["png", "jpg", "jpeg", "webp", "heic", "gif"]
+
+        if let explicit = paths, !explicit.isEmpty {
+            targets = explicit.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        } else if let folder = folderPath, !folder.isEmpty {
+            let expanded = (folder as NSString).expandingTildeInPath
+            let url = URL(fileURLWithPath: expanded)
+            if let files = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey], options: .skipsHiddenFiles) {
+                targets = files.filter { imageExts.contains($0.pathExtension.lowercased()) }
+            }
+        } else {
+            // Default: gabungkan recent screenshots dan Desktop images
+            let home = fm.homeDirectoryForCurrentUser
+            let desktop = home.appendingPathComponent("Desktop")
+            let screenshotsDir = home.appendingPathComponent("Pictures/Screenshots")
+            for dir in [screenshotsDir, desktop] {
+                if let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey], options: .skipsHiddenFiles) {
+                    targets.append(contentsOf: files.filter { imageExts.contains($0.pathExtension.lowercased()) })
+                }
+            }
+        }
+
+        targets = targets.filter { fm.fileExists(atPath: $0.path) }
+        guard !targets.isEmpty else {
+            return (false, 0, "Tidak ada file gambar yang ditemukan untuk ditampilkan di galeri.")
+        }
+
+        // Buat representasi JSON untuk Canvas Gallery View
+        var itemsData: [[String: String]] = []
+        for url in targets.prefix(30) {
+            let attr = (try? fm.attributesOfItem(atPath: url.path)) ?? [:]
+            let size = (attr[.size] as? NSNumber)?.int64Value ?? 0
+            let sizeStr = size > 1_048_576 ? String(format: "%.1f MB", Double(size) / 1_048_576.0) : "\(size / 1024) KB"
+            let modDate = (attr[.modificationDate] as? Date).map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "-"
+
+            itemsData.append([
+                "filePath": url.path,
+                "title": url.lastPathComponent,
+                "size": sizeStr,
+                "date": modDate,
+                "format": url.pathExtension.uppercased()
+            ])
+        }
+
+        let jsonString: String
+        if let data = try? JSONSerialization.data(withJSONObject: itemsData, options: .prettyPrinted),
+           let str = String(data: data, encoding: .utf8) {
+            jsonString = str
+        } else {
+            jsonString = targets.map { $0.path }.joined(separator: "\n")
+        }
+
+        let galleryTitle = title ?? "Galeri Media (\(itemsData.count) Berkas)"
+        let artifact = CanvasArtifact(
+            id: "gallery-\(UUID().uuidString.prefix(6))",
+            title: galleryTitle,
+            type: .gallery,
+            content: jsonString,
+            metadata: ["itemCount": "\(itemsData.count)"]
+        )
+        CanvasManager.shared.present(artifact: artifact)
+        return (true, itemsData.count, "Galeri media dengan \(itemsData.count) berkas berhasil ditampilkan di Canvas Studio.")
+    }
+
+    /// Menemukan rekaman layar, screenshot, atau lagu terbaru
+    public func listRecentMedia(category: String = "all", limit: Int = 10) -> [MediaItem] {
+        scanRecentMediaFiles()
+        var results: [MediaItem] = []
+
+        if category == "screenshots" || category == "all" {
+            results.append(contentsOf: recentScreenshots)
+        }
+
+        if (category == "downloads" || category == "all") && results.count < limit {
+            let fm = FileManager.default
+            let downloads = fm.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+            if let files = try? fm.contentsOfDirectory(at: downloads, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey], options: .skipsHiddenFiles) {
+                let mediaExts = ["png", "jpg", "jpeg", "webp", "mp4", "mov", "mp3", "m4a", "wav"]
+                let filtered = files.filter { mediaExts.contains($0.pathExtension.lowercased()) }
+                for file in filtered.prefix(limit) {
+                    let ext = file.pathExtension.lowercased()
+                    let mType: MediaType = ["mp3", "m4a", "wav"].contains(ext) ? .music : (["mp4", "mov"].contains(ext) ? .video : .image)
+                    let mSource: MediaSource = mType == .music ? .localAudio : (mType == .video ? .localVideo : .localImage)
+                    results.append(MediaItem(
+                        id: file.path,
+                        title: file.lastPathComponent,
+                        artist: "Downloads",
+                        album: ext.uppercased(),
+                        source: mSource,
+                        mediaType: mType,
+                        fileURL: file
+                    ))
+                }
+            }
+        }
+
+        return Array(results.prefix(limit))
+    }
 }
+
 

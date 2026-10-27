@@ -29,7 +29,7 @@
 
 ### macOS
 
-- **Dynamic Island Media Studio & Multi-Format Player (Paket 14 - Tahap A & B)**:
+- **Dynamic Island Media Studio & Multi-Format Player (Paket 14 - Selesai Penuh: Tahap A, B, C, D)**:
   - 🎵 **Dynamic Media Pill (Resting / Compact Mode) (`IslandRootView.swift`, `AudioWaveformEngine.swift`)**:
     - Notch Island melakukan *fluid morphing* saat media audio/video berputar di latar belakang, memanjang secara anggun ke lebar 248px.
     - Menampilkan mini cover art atau animated music note di sebelah kiri notch.
@@ -44,6 +44,19 @@
     - Deteksi otomatis track yang sedang diputar di Spotify & Apple Music via background AppleScript polling tanpa memblokir render frame 60 FPS.
     - Scanner otomatis berkas tangkapan layar terbaru dari `~/Desktop` dan `~/Pictures/Screenshots`.
     - Engine pemutar file audio lokal mandiri via `AVAudioPlayer` dengan dukungan seek, volume, dan progress timer.
+  - 🎨 **Integrasi Canvas Studio 2.0 (`CanvasArtifact.swift`, `CanvasView.swift`) (Tahap C)**:
+    - Penambahan dua tipe artefak baru: `.media` ("Media Studio", icon `play.rectangle.fill`) dan `.gallery` ("Galeri Media", icon `photo.on.rectangle.angled`).
+    - **Pemutar Layar Lebar**: Player video native (`AVPlayerView`) beresolusi tinggi di Canvas dan player audio mewah dengan ambient glow blur, 24-bar live equalizer spectrum, kontrol scrubbing slider, volume, dan tombol "Putar di Notch".
+    - **Galeri Foto Multi-Kolom**: Grid galeri responsif untuk foto/screenshots dengan pencarian instan live (`gallerySearch`), filter counter, dan **Modal Lightbox Dialog** terintegrasi (preview besar, tombol salin ke clipboard, reveal di Finder, dan transfer langsung ke Notch Island).
+  - 🛠️ **4 Tools LLM Baru & Apple Shortcuts URL Routing (`ToolExecutor.swift`, `AppleShortcutsService.swift`) (Tahap D)**:
+    - `media_player_control`: Mengontrol pemutar musik/media (play, pause, toggle, next, previous, seek, volume).
+    - `media_inspect_file`: Menganalisis metadata file lokal (resolusi, ukuran, durasi) dan menampilkan kartu interaktifnya di Notch Island atau Canvas Studio.
+    - `media_present_gallery`: Menampilkan galeri foto/screenshot ke Canvas Studio dengan tata letak kisi-kisi dan lightbox.
+    - `media_list_recent`: Menemukan daftar tangkapan layar atau rekaman layar terbaru.
+    - 10 Alias Sinonim: `player_control`, `play_music`, `pause_music`, `inspect_image`, `inspect_media`, `open_gallery`, `show_gallery`, `play_video`, `recent_screenshots`, `recent_media`.
+    - Total tools bertambah dari 94 menjadi **98 tools**, 100% patuh validasi skema Gemini OpenAPI.
+    - Routing skema URL Siri / Shortcuts: `coucou://media` dan `coucou://player` untuk kontrol pemutaran instan.
+
 
 
 - **Real-Time Full-Duplex Voice 2.0 (Conversational Live Stream) (Paket 12)**:
