@@ -131,6 +131,15 @@ struct SettingsView: View {
     @State private var newServerKeyPath: String = "~/.ssh/id_rsa"
     @State private var isAuditingServer: Bool = false
 
+    // Kubernetes & Database Command Center
+    @State private var isK8sAvailable: Bool = false
+    @State private var k8sContext: String = ""
+    @State private var isCheckingK8s: Bool = false
+    @State private var isSqliteAvailable: Bool = true
+    @State private var isPsqlAvailable: Bool = false
+    @State private var isMysqlAvailable: Bool = false
+    @State private var isRedisAvailable: Bool = false
+
     // Mobile & Telegram
     @State private var telegramToken: String = KeychainStore.shared.get("telegram-bot-token")
         ?? UserDefaults.standard.string(forKey: "telegramBotToken") ?? ""
@@ -234,10 +243,20 @@ struct SettingsView: View {
             Task {
                 let avail = await DockerIntegrationService.shared.isDockerAvailable()
                 let result = await DockerIntegrationService.shared.listContainers(all: false)
+                let k8sAvail = await KubernetesIntegrationService.shared.isKubectlAvailable()
+                let k8sCtx = await KubernetesIntegrationService.shared.getCurrentContext()
+                let psqlAvail = DatabaseIntegrationService.shared.isClientAvailable(engine: .postgres)
+                let mysqlAvail = DatabaseIntegrationService.shared.isClientAvailable(engine: .mysql)
+                let redisAvail = DatabaseIntegrationService.shared.isClientAvailable(engine: .redis)
                 await MainActor.run {
                     isDockerAvailable = avail
                     dockerContainersCount = result.containers.count
                     remoteServersList = SSHServerGatewayService.shared.listServers()
+                    isK8sAvailable = k8sAvail
+                    k8sContext = k8sCtx
+                    isPsqlAvailable = psqlAvail
+                    isMysqlAvailable = mysqlAvail
+                    isRedisAvailable = redisAvail
                 }
             }
 
@@ -2204,6 +2223,85 @@ struct SettingsView: View {
                     .padding(6)
                     .background(Color.secondary.opacity(0.06))
                     .cornerRadius(6)
+                }
+                .padding(6)
+            }
+
+            // Kubernetes Cluster Sentinel
+            GroupBox("Kubernetes Cluster Sentinel") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: isK8sAvailable ? "point.3.filled.connected.trianglepath.dotted" : "point.3.connected.trianglepath.dotted")
+                            .foregroundColor(isK8sAvailable ? .cyan : .secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Kubectl & Cluster Context:")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(isK8sAvailable ? "Aktif: \(k8sContext)" : "Kubectl tidak terdeteksi atau cluster belum terhubung")
+                                .font(.system(size: 10))
+                                .foregroundColor(isK8sAvailable ? .green : .secondary)
+                        }
+                        Spacer()
+                        Button(isCheckingK8s ? "Cek..." : "Refresh") {
+                            isCheckingK8s = true
+                            Task {
+                                let avail = await KubernetesIntegrationService.shared.isKubectlAvailable()
+                                let ctx = await KubernetesIntegrationService.shared.getCurrentContext()
+                                await MainActor.run {
+                                    isK8sAvailable = avail
+                                    k8sContext = ctx
+                                    isCheckingK8s = false
+                                    statusMessage = avail ? "Cluster Kubernetes: \(ctx)" : "Kubectl tidak aktif."
+                                }
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isCheckingK8s)
+
+                        Button("Periksa Pods di Canvas") {
+                            Task {
+                                _ = await KubernetesIntegrationService.shared.getPods(namespace: nil)
+                                await MainActor.run {
+                                    if let art = CanvasManager.shared.currentArtifact {
+                                        CanvasManager.shared.present(artifact: art)
+                                    }
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(!isK8sAvailable)
+                    }
+                }
+                .padding(6)
+            }
+
+            // Database Safe Explorer & Query
+            GroupBox("Database Safe Explorer (Read-Only Guardrail)") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Jelajahi skema dan jalankan query analitik secara aman dengan proteksi pemblokiran perintah destruktif.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 12) {
+                        HStack(spacing: 4) {
+                            Circle().fill(Color.green).frame(width: 7, height: 7)
+                            Text("SQLite (Bawaan)").font(.system(size: 10))
+                        }
+                        HStack(spacing: 4) {
+                            Circle().fill(isPsqlAvailable ? Color.green : Color.gray).frame(width: 7, height: 7)
+                            Text("PostgreSQL").font(.system(size: 10))
+                        }
+                        HStack(spacing: 4) {
+                            Circle().fill(isMysqlAvailable ? Color.green : Color.gray).frame(width: 7, height: 7)
+                            Text("MySQL").font(.system(size: 10))
+                        }
+                        HStack(spacing: 4) {
+                            Circle().fill(isRedisAvailable ? Color.green : Color.gray).frame(width: 7, height: 7)
+                            Text("Redis").font(.system(size: 10))
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
                 .padding(6)
             }

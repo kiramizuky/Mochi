@@ -113,6 +113,9 @@ final class ToolExecutor: @unchecked Sendable {
         dockerListContainersDef, dockerGetLogsDef, dockerRestartContainerDef,
         sshListServersDef, sshServerHealthDef, sshRunCommandDef, sshTailLogDef,
         calendarListEventsDef, reminderAddTaskDef, notesCreateNoteDef, mediaControlDef,
+        k8sGetPodsDef, k8sDescribePodDef, k8sPodLogsDef,
+        dbInspectSchemaDef, dbExecuteSafeQueryDef,
+        editorGotoFileLineDef, gitSmartCommitDef, ghPrReviewSummaryDef,
     ]
 
     /// Semua alat yang tersedia termasuk alat dinamis yang disintesis on-the-fly.
@@ -1082,6 +1085,113 @@ final class ToolExecutor: @unchecked Sendable {
         ])
     )
 
+    // MARK: - Kubernetes Sentinel (DevOps & Cloud Command Center)
+    static let k8sGetPodsDef = LLMToolDef(
+        name: "k8s_get_pods",
+        description: "Ambil daftar status pod Kubernetes di cluster aktif (namespace, nama pod, ready, status, restarts, age). Menampilkan tabel interaktif di Canvas.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "namespace": .object(["type": .string("string"), "description": .string("Namespace Kubernetes target (opsional, default: semua namespace).")]),
+            ]),
+        ])
+    )
+
+    static let k8sDescribePodDef = LLMToolDef(
+        name: "k8s_describe_pod",
+        description: "Deskripsikan rincian pod Kubernetes (event, status crash, OOMKilled, konfigurasi container) untuk analisa kegagalan atau inspeksi.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object(["type": .string("string"), "description": .string("Nama pod Kubernetes yang akan dideskripsikan.")]),
+                "namespace": .object(["type": .string("string"), "description": .string("Namespace pod (opsional).")]),
+            ]),
+            "required": .array([.string("name")]),
+        ])
+    )
+
+    static let k8sPodLogsDef = LLMToolDef(
+        name: "k8s_pod_logs",
+        description: "Ambil baris log output dari pod Kubernetes untuk investigasi error runtime.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object(["type": .string("string"), "description": .string("Nama pod Kubernetes.")]),
+                "namespace": .object(["type": .string("string"), "description": .string("Namespace pod (opsional).")]),
+                "tail": .object(["type": .string("integer"), "description": .string("Jumlah baris log terakhir yang diambil (default: 100).")]),
+            ]),
+            "required": .array([.string("name")]),
+        ])
+    )
+
+    // MARK: - Database Safe Explorer & Query
+    static let dbInspectSchemaDef = LLMToolDef(
+        name: "db_inspect_schema",
+        description: "Inspeksi struktur skema database (daftar tabel, kolom, DDL) untuk SQLite, PostgreSQL, MySQL, atau Redis. Hasil disajikan di Canvas.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "engine": .object(["type": .string("string"), "description": .string("Engine database: 'sqlite', 'postgres', 'mysql', atau 'redis'.")]),
+                "target": .object(["type": .string("string"), "description": .string("Path berkas SQLite (misal: '~/data.db') atau nama database / connection string.")]),
+            ]),
+            "required": .array([.string("engine"), .string("target")]),
+        ])
+    )
+
+    static let dbExecuteSafeQueryDef = LLMToolDef(
+        name: "db_execute_safe_query",
+        description: "Jalankan query analitik database yang aman (Read-Only Guardrail: hanya SELECT / pembacaan data) pada SQLite, PostgreSQL, MySQL, atau Redis. Hasil disajikan dalam tabel Canvas.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "engine": .object(["type": .string("string"), "description": .string("Engine database: 'sqlite', 'postgres', 'mysql', atau 'redis'.")]),
+                "target": .object(["type": .string("string"), "description": .string("Path berkas SQLite atau database target.")]),
+                "query": .object(["type": .string("string"), "description": .string("Perintah query SQL yang akan dieksekusi (Read-Only SELECT).")]),
+            ]),
+            "required": .array([.string("engine"), .string("target"), .string("query")]),
+        ])
+    )
+
+    // MARK: - Developer Environment & Git Workflow
+    static let editorGotoFileLineDef = LLMToolDef(
+        name: "editor_goto_file_line",
+        description: "Buka berkas kode pada editor (Cursor, VS Code, Windsurf, Xcode) dan lompat langsung ke baris dan kolom tertentu.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "path": .object(["type": .string("string"), "description": .string("Path absolut atau relatif berkas yang akan dibuka.")]),
+                "line": .object(["type": .string("integer"), "description": .string("Nomor baris tujuan (1-based).")]),
+                "column": .object(["type": .string("integer"), "description": .string("Nomor kolom tujuan (opsional, default: 1).")]),
+                "editor": .object(["type": .string("string"), "description": .string("Editor pilihan: 'cursor', 'vscode', 'windsurf', 'xcode', atau 'auto'.")]),
+            ]),
+            "required": .array([.string("path"), .string("line")]),
+        ])
+    )
+
+    static let gitSmartCommitDef = LLMToolDef(
+        name: "git_smart_commit",
+        description: "Analisis berkas git yang berubah dan hasilkan usulan pesan Conventional Commit otomatis.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "directory": .object(["type": .string("string"), "description": .string("Direktori repositori git (opsional, default: repo aktif).")]),
+                "prefix": .object(["type": .string("string"), "description": .string("Awalan commit tipe konvensional: 'feat', 'fix', 'docs', 'chore', dll (opsional).")]),
+            ]),
+        ])
+    )
+
+    static let ghPrReviewSummaryDef = LLMToolDef(
+        name: "gh_pr_review_summary",
+        description: "Review Pull Request GitHub aktif atau riwayat commit terakhir dan tampilkan ringkasan diff perubahan di Canvas.",
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "pr_number": .object(["type": .string("string"), "description": .string("Nomor atau cabang Pull Request GitHub (opsional, default: PR aktif).")]),
+                "directory": .object(["type": .string("string"), "description": .string("Direktori repositori lokal (opsional).")]),
+            ]),
+        ])
+    )
+
     static let officeListSheetsDef = LLMToolDef(
         name: "office_list_sheets",
         description: "List all worksheet/tab names in the active Microsoft Excel or Numbers workbook.",
@@ -1333,6 +1443,24 @@ final class ToolExecutor: @unchecked Sendable {
         "music_control": "media_control",
         "spotify_control": "media_control",
         "music": "media_control",
+        "kubectl_pods": "k8s_get_pods",
+        "k8s_pods": "k8s_get_pods",
+        "kubectl_describe": "k8s_describe_pod",
+        "describe_pod": "k8s_describe_pod",
+        "kubectl_logs": "k8s_pod_logs",
+        "pod_logs": "k8s_pod_logs",
+        "inspect_db": "db_inspect_schema",
+        "db_schema": "db_inspect_schema",
+        "query_db": "db_execute_safe_query",
+        "sql_query": "db_execute_safe_query",
+        "db_query": "db_execute_safe_query",
+        "open_editor": "editor_goto_file_line",
+        "goto_line": "editor_goto_file_line",
+        "open_line": "editor_goto_file_line",
+        "smart_commit": "git_smart_commit",
+        "git_commit": "git_smart_commit",
+        "review_pr": "gh_pr_review_summary",
+        "pr_review": "gh_pr_review_summary",
     ]
 
     /// Short, human-readable target for UI events and audit records.
@@ -1416,6 +1544,14 @@ final class ToolExecutor: @unchecked Sendable {
         case "reminder_add_task":      raw = input["title"]?.stringValue
         case "notes_create_note":      raw = input["title"]?.stringValue
         case "media_control":          raw = input["action"]?.stringValue
+        case "k8s_get_pods":           raw = input["namespace"]?.stringValue ?? "all"
+        case "k8s_describe_pod":        raw = input["name"]?.stringValue
+        case "k8s_pod_logs":            raw = input["name"]?.stringValue
+        case "db_inspect_schema":       raw = input["target"]?.stringValue
+        case "db_execute_safe_query":   raw = input["query"]?.stringValue
+        case "editor_goto_file_line":   raw = input["path"]?.stringValue
+        case "git_smart_commit":        raw = input["directory"]?.stringValue ?? "smart_commit"
+        case "gh_pr_review_summary":    raw = input["pr_number"]?.stringValue ?? "pr_review"
         default:               raw = nil
         }
         let value = raw?.isEmpty == false ? raw! : name
@@ -1539,6 +1675,12 @@ final class ToolExecutor: @unchecked Sendable {
         case "reminder_add_task":      category = .appControl; target = input["title"]?.stringValue
         case "notes_create_note":      category = .appControl; target = input["title"]?.stringValue
         case "media_control":          category = .appControl; target = input["action"]?.stringValue
+        case "k8s_get_pods":           category = .shell; target = input["namespace"]?.stringValue ?? "kubectl"
+        case "k8s_describe_pod", "k8s_pod_logs": category = .shell; target = input["name"]?.stringValue ?? "kubectl"
+        case "db_inspect_schema", "db_execute_safe_query": category = .read; target = input["target"]?.stringValue ?? "db"
+        case "editor_goto_file_line":   category = .appControl; target = input["path"]?.stringValue ?? "editor"
+        case "git_smart_commit":        category = .shell; target = input["directory"]?.stringValue ?? "git"
+        case "gh_pr_review_summary":    category = .shell; target = input["pr_number"]?.stringValue ?? "git"
         default:
             if let dyn = DynamicToolSynthesizer.shared.getTool(id: name) {
                 category = .shell
@@ -1900,6 +2042,73 @@ final class ToolExecutor: @unchecked Sendable {
             }
             let res = await AppleAppsIntegrationService.shared.controlMedia(action: action)
             return ToolResult(output: res)
+        case "k8s_get_pods":
+            let ns = input["namespace"]?.stringValue
+            let (_, summary) = await KubernetesIntegrationService.shared.getPods(namespace: ns)
+            return ToolResult(output: summary)
+        case "k8s_describe_pod":
+            guard let name = input["name"]?.stringValue, !name.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'name' (nama pod).", isError: true)
+            }
+            let ns = input["namespace"]?.stringValue
+            let (_, summary) = await KubernetesIntegrationService.shared.describePod(name: name, namespace: ns)
+            return ToolResult(output: summary)
+        case "k8s_pod_logs":
+            guard let name = input["name"]?.stringValue, !name.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'name' (nama pod).", isError: true)
+            }
+            let ns = input["namespace"]?.stringValue
+            let tail = input["tail"]?.numberValue.map { Int($0) } ?? 100
+            let logs = await KubernetesIntegrationService.shared.getPodLogs(name: name, namespace: ns, tail: tail)
+            return ToolResult(output: logs)
+        case "db_inspect_schema":
+            guard let engineStr = input["engine"]?.stringValue?.lowercased(),
+                  let target = input["target"]?.stringValue, !target.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'engine' ('sqlite', 'postgres', 'mysql', 'redis') dan 'target'.", isError: true)
+            }
+            let engine: DatabaseEngine
+            switch engineStr {
+            case "postgres", "postgresql": engine = .postgres
+            case "mysql":                  engine = .mysql
+            case "redis":                  engine = .redis
+            default:                       engine = .sqlite
+            }
+            let (_, summary) = await DatabaseIntegrationService.shared.inspectSchema(engine: engine, target: target)
+            return ToolResult(output: summary)
+        case "db_execute_safe_query":
+            guard let engineStr = input["engine"]?.stringValue?.lowercased(),
+                  let target = input["target"]?.stringValue, !target.isEmpty,
+                  let query = input["query"]?.stringValue, !query.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'engine', 'target', dan 'query'.", isError: true)
+            }
+            let engine: DatabaseEngine
+            switch engineStr {
+            case "postgres", "postgresql": engine = .postgres
+            case "mysql":                  engine = .mysql
+            case "redis":                  engine = .redis
+            default:                       engine = .sqlite
+            }
+            let (isErr, out) = await DatabaseIntegrationService.shared.executeSafeQuery(engine: engine, target: target, query: query)
+            return ToolResult(output: out, isError: isErr)
+        case "editor_goto_file_line":
+            guard let path = input["path"]?.stringValue, !path.isEmpty else {
+                return ToolResult(output: "Harap berikan parameter 'path' berkas.", isError: true)
+            }
+            let line = input["line"]?.numberValue.map { Int($0) } ?? 1
+            let col = input["column"]?.numberValue.map { Int($0) } ?? 1
+            let editor = input["editor"]?.stringValue
+            let (ok, msg) = await DeveloperEnvironmentService.shared.gotoFileLine(editor: editor, path: path, line: line, column: col)
+            return ToolResult(output: msg, isError: !ok)
+        case "git_smart_commit":
+            let dir = input["directory"]?.stringValue
+            let prefix = input["prefix"]?.stringValue
+            let (ok, msg, _) = await DeveloperEnvironmentService.shared.smartCommit(directory: dir, prefix: prefix)
+            return ToolResult(output: msg, isError: !ok)
+        case "gh_pr_review_summary":
+            let pr = input["pr_number"]?.stringValue
+            let dir = input["directory"]?.stringValue
+            let (ok, msg, _) = await DeveloperEnvironmentService.shared.reviewPullRequest(prNumberOrBranch: pr, repoPath: dir)
+            return ToolResult(output: msg, isError: !ok)
         default:
             if let _ = DynamicToolSynthesizer.shared.getTool(id: name) {
                 var args: [String: String] = [:]

@@ -29,6 +29,15 @@
 
 ### macOS
 
+- **DevOps, Cloud & Database Command Center Suite (Paket 10)**:
+  - ☸️ **Kubernetes Cluster Sentinel (`KubernetesIntegrationService`)**: Pemantauan status pod dan deployment cluster per-namespace secara real-time (`k8s_get_pods` / `kubectl_pods`), inspeksi mendalam event crash/OOMKilled pod (`k8s_describe_pod` / `kubectl_describe`), dan pembacaan log runtime (`k8s_pod_logs` / `pod_logs`). Visualisasi otomatis disajikan dalam tabel interaktif di Canvas Studio.
+  - 🗄️ **Database Safe Explorer & Query Engine (`DatabaseIntegrationService`)**: Mendukung PostgreSQL, MySQL, Redis, dan SQLite lokal dengan proteksi mutlak **Read-Only Guardrail**. Memblokir seluruh instruksi modifikasi atau destruktif (`DROP`, `DELETE`, `UPDATE`, `INSERT`, `TRUNCATE`, `ALTER`, `FLUSHALL`) secara otonom sebelum query dieksekusi. Menyajikan skema DDL relasi tabel (`db_inspect_schema`) dan hasil eksekusi query analitik `SELECT` (`db_execute_safe_query`) ke dalam spreadsheet Canvas yang dapat disortir dan dicari.
+  - 💻 **Developer Environment & Smart Git Supercharger (`DeveloperEnvironmentService`)**:
+    - Navigasi file dan baris error instan (`editor_goto_file_line` / `goto_line`): Melompat langsung ke baris dan kolom kode yang error di Cursor, VS Code, Windsurf, atau Xcode (`editor -g path:line:col`).
+    - Usulan commit konvensional cerdas (`git_smart_commit` / `smart_commit`): Menganalisis diff perubahan staged/unstaged dan menyusun pesan Conventional Commit (`feat`, `fix`, `docs`, `chore`, `test`) secara otomatis.
+    - Review Pull Request visual (`gh_pr_review_summary` / `review_pr`): Mengambil status PR GitHub aktif atau 5 commit terakhir dan menampilkannya di Canvas.
+  - ⚙️ **Panel Pengaturan Kubernetes & Database di Settings (`SettingsView.swift`)**: Menampilkan indikator status cluster Kubernetes aktif dengan tombol 1-klik "Periksa Pods di Canvas", serta status ketersediaan klien database lokal (SQLite, PostgreSQL, MySQL, Redis).
+
 - **Application, Server & DevOps Orchestration Suite**:
   - 🐳 **Docker & Container Engine Integration (`DockerIntegrationService`)**: Mendeteksi Docker daemon lokal secara non-blocking (`isDockerAvailable`), membaca status container (Up/Down, image, ports, ID) dengan visualisasi tabel interaktif otomatis di Canvas Studio (`docker_list_containers` / alias `docker_ps`), mengambil baris log output container terakhir (`docker_get_logs` / `docker_logs`), serta me-restart container secara aman (`docker_restart_container`).
   - 🖥️ **Remote Server SSH Gateway & Diagnostics (`SSHServerGatewayService`)**: Gateway pemantauan server Linux / Cloud jarak jauh via koneksi SSH terenkripsi (`ssh_list_servers`, `ssh_server_health`, `ssh_run_command`, `ssh_tail_log`). Secara otomatis melakukan audit kesehatan server (uptime, load average, kapasitas RAM, penggunaan disk `df -h /`, status layanan systemd) dan menghasilkan kartu diagnostik elegan di Canvas.
