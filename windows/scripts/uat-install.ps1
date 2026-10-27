@@ -86,7 +86,7 @@ $claudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"
 $claudeBefore = if (Test-Path $claudeSettings) { (Get-FileHash $claudeSettings -Algorithm SHA256).Hash } else { $null }
 $prefs = if (Test-Path (Join-Path $env:APPDATA "Mochi\settings.json")) { Join-Path $env:APPDATA "Mochi\settings.json" } else { Join-Path $env:APPDATA "Coucou\settings.json" }
 $prefsBefore = if (Test-Path $prefs) { (Get-FileHash $prefs -Algorithm SHA256).Hash } else { $null }
-$local = if (Test-Path (Join-Path $env:LOCALAPPDATA "Mochi")) { Join-Path $env:LOCALAPPDATA "Mochi" } else { Join-Path $env:LOCALAPPDATA "Coucou" }
+$local = Join-Path $env:LOCALAPPDATA "Mochi"
 
 $installed = $false
 $entryPath = $null

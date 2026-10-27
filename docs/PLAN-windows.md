@@ -21,20 +21,21 @@ Perintah verifikasi cepat dari `windows/`:
 ```powershell
 npm ci
 npm run verify            # versi, typecheck, 37 test TS, 28 WAV
-cargo test --workspace    # 74 test Rust (70 lib + 3 hook + 1 cek signature rilis)
+cargo test --workspace    # 78 test Rust (74 lib + 3 hook + 1 cek signature rilis)
 npm run build             # typecheck + bundle front end + hook release
-npm run smoke:hook        # relay aman saat Coucou ditutup
+npm run smoke:hook        # relay aman saat Mochi ditutup
 npm run smoke:app         # 9 pemeriksaan runtime pada build release
 npm run sign:smoke        # pipeline signing dengan sertifikat sementara
 npm run uat:install       # install, launch, smoke, uninstall, cleanup
-npm run pack              # installer NSIS + file .sha256 (belum ditandatangani)
+npm run pack              # installer NSIS + file .sha256 (Mochi-Windows-<versi>-setup.exe)
 npm run feed:updater      # latest.json dari installer + signature final
 npm run feed:serve        # feed lokal untuk menguji cek update (debug)
 ```
 
-`npm run smoke:app` memerlukan `cargo build --release -p coucou --features custom-protocol`
+`npm run smoke:app` memerlukan `cargo build --release -p mochi --features custom-protocol`
 karena `cargo build` biasa menghasilkan build dev Tauri. `npm run pack` menghasilkan
-`windows/release/Coucou-Windows-<versi>-setup.exe` beserta sidecar `.sha256`.
+`windows/release/Mochi-Windows-<versi>-setup.exe` beserta sidecar `.sha256`.
+Package identifier Windows diset ke `id.pcstudio.mochi` dengan nama produk `Mochi`.
 Installer dari build lokal belum ditandatangani Authenticode, jadi SmartScreen
 akan menampilkan peringatan sampai rilis signed dari CI tersedia.
 
