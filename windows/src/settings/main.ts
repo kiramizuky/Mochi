@@ -5,7 +5,8 @@
 import "./settings.css";
 import { Bridge, onEvent, type CrashReport, type HookStatus, type IntegrationHealth, type LauncherCatalog, type LauncherOption, type ProviderInfo, type ProviderModelOption, type UpdateProgress } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
-import { h, clear } from "../views/dom";
+import { h, clear, svg } from "../views/dom";
+import { ICONS } from "../views/icons";
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
 let version = "";
@@ -1531,6 +1532,101 @@ function appIntegrationsSection() {
   return section;
 }
 
+interface SettingsTab {
+  id: string;
+  label: string;
+  iconSvg: SVGSVGElement;
+  sections: HTMLElement[];
+}
+
+function buildTabs(tabs: SettingsTab[]): HTMLElement {
+  const container = h("div", { class: "tabs-container" });
+  const nav = h("div", { class: "tabs-nav", role: "tablist", "aria-label": "Settings Tabs" });
+  const panesWrapper = h("div", { class: "tab-panes" });
+
+  let savedTab = "general";
+  try {
+    savedTab = localStorage.getItem("mochi-settings-active-tab") || "general";
+  } catch {
+    // ignore
+  }
+  if (!tabs.some((t) => t.id === savedTab)) {
+    savedTab = tabs[0]?.id || "general";
+  }
+
+  const buttons: HTMLButtonElement[] = [];
+  const panes: HTMLElement[] = [];
+
+  function switchTab(id: string) {
+    for (let i = 0; i < tabs.length; i++) {
+      const tab = tabs[i];
+      const btn = buttons[i];
+      const pane = panes[i];
+      const isActive = tab.id === id;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-selected", String(isActive));
+      btn.tabIndex = isActive ? 0 : -1;
+      pane.classList.toggle("hidden", !isActive);
+      pane.setAttribute("aria-hidden", String(!isActive));
+    }
+    try {
+      localStorage.setItem("mochi-settings-active-tab", id);
+    } catch {
+      // ignore
+    }
+  }
+
+  tabs.forEach((tab, index) => {
+    const isActive = tab.id === savedTab;
+    const btn = h(
+      "button",
+      {
+        class: isActive ? "tab-btn active" : "tab-btn",
+        role: "tab",
+        id: `tab-btn-${tab.id}`,
+        "aria-selected": String(isActive),
+        "aria-controls": `tab-pane-${tab.id}`,
+        tabIndex: isActive ? 0 : -1,
+        onclick: () => switchTab(tab.id),
+      },
+      tab.iconSvg,
+      h("span", { text: tab.label }),
+    );
+
+    btn.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") {
+        const next = (index + 1) % tabs.length;
+        buttons[next].focus();
+        switchTab(tabs[next].id);
+      } else if (e.key === "ArrowLeft") {
+        const prev = (index - 1 + tabs.length) % tabs.length;
+        buttons[prev].focus();
+        switchTab(tabs[prev].id);
+      }
+    });
+
+    buttons.push(btn);
+    nav.append(btn);
+
+    const pane = h(
+      "div",
+      {
+        class: isActive ? "tab-pane" : "tab-pane hidden",
+        role: "tabpanel",
+        id: `tab-pane-${tab.id}`,
+        "aria-labelledby": `tab-btn-${tab.id}`,
+        "aria-hidden": String(!isActive),
+      },
+      ...tab.sections,
+    );
+    panes.push(pane);
+    panesWrapper.append(pane);
+  });
+
+  container.append(nav, panesWrapper);
+  return container;
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -1569,21 +1665,76 @@ async function main() {
   );
   const welcome = welcomeSection(providers, hasKey, status.installed, launchers);
   if (welcome) root.append(welcome);
+  const tabs: SettingsTab[] = [
+    {
+      id: "general",
+      label: "General",
+      iconSvg: svg(ICONS.gear, 13),
+      sections: [
+        generalSection(),
+        claudeSection(status),
+        launcherSection(launchers),
+      ],
+    },
+    {
+      id: "ai",
+      label: "AI & Models",
+      iconSvg: svg(
+        "M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zM7.5 13A1.5 1.5 0 1 0 9 14.5 1.5 1.5 0 0 0 7.5 13zm9 0a1.5 1.5 0 1 0 1.5 1.5 1.5 1.5 0 0 0-1.5-1.5z",
+        13,
+      ),
+      sections: [aiSection(providers)],
+    },
+    {
+      id: "integrations",
+      label: "Integrations",
+      iconSvg: svg("M4 4h7v7H4V4zm9 0h7v7h-7V4zm-9 9h7v7H4v-7zm9 0h7v7h-7v-7z", 13),
+      sections: [
+        appIntegrationsSection(),
+        integrationsSection(present, health),
+      ],
+    },
+    {
+      id: "security",
+      label: "Security & Sentinel",
+      iconSvg: svg(
+        "M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm0 2.18l6 2.25v4.66c0 4.14-2.73 8.01-6 9.07-3.27-1.06-6-4.93-6-9.07V6.43l6-2.25z",
+        13,
+      ),
+      sections: [
+        securitySection(),
+        sentinelSection(),
+      ],
+    },
+    {
+      id: "memory",
+      label: "Memory",
+      iconSvg: svg(
+        "M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 21l3.39-.62C9.17 20.73 10.54 21 12 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 2c3.87 0 7 3.13 7 7s-3.13 7-7 7c-1.28 0-2.48-.35-3.52-.96l-.25-.15-2.02.37.37-2.02-.15-.25C5.83 14.95 5.5 13.52 5.5 12c0-3.87 3.13-7 6.5-7z",
+        13,
+      ),
+      sections: [memorySection()],
+    },
+    {
+      id: "system",
+      label: "System & Logs",
+      iconSvg: svg(
+        "M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.5 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z",
+        13,
+      ),
+      sections: [
+        updateSection(),
+        logSection(),
+        crashSection(crashes),
+      ],
+    },
+  ];
+
   root.append(
-    claudeSection(status),
-    aiSection(providers),
-    launcherSection(launchers),
-    integrationsSection(present, health),
-    generalSection(),
-    securitySection(),
-    sentinelSection(),
-    memorySection(),
-    appIntegrationsSection(),
-    updateSection(),
-    logSection(),
-    crashSection(crashes),
+    buildTabs(tabs),
     h("div", {
       class: "hint",
+      style: "text-align: center; margin-top: 12px;",
       text: "No telemetry. Network requests only go to the services you configure yourself.",
     }),
   );

@@ -254,6 +254,7 @@ maksimal 512 KB yang bisa dibuka lewat **Open log folder**. Panic Rust juga
 ditulis ke `%LOCALAPPDATA%\Coucou\crashes\reports.json` (maksimal 50 laporan,
 setiap field disanitasi, tidak pernah dikirim); Settings menampilkan tiga laporan
 terbaru dengan tombol **Open crash folder** dan **Clear crash reports**.
+Navigasi antarmuka Settings kini mengadopsi arsitektur Multi-Tab (General, AI & Models, Integrations, Security & Sentinel, Memory, System & Logs) dengan navigasi keyboard (ArrowLeft/ArrowRight), ikon visual, dan persistensi tab aktif via localStorage, menghilangkan scroll vertikal panjang.
 
 Langkah 4 selesai untuk onboarding dan pemilihan editor/terminal. Pada
 peluncuran pertama Settings terbuka dengan kartu
