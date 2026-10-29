@@ -3,7 +3,7 @@
 // integrations land here too in a later stage.
 
 import "./settings.css";
-import { Bridge, onEvent, type CrashReport, type HookStatus, type IntegrationHealth, type LauncherCatalog, type LauncherOption, type ProviderInfo, type ProviderModelOption, type UpdateProgress } from "../core/bridge";
+import { Bridge, onEvent, type CrashReport, type HookStatus, type IntegrationHealth, type LauncherCatalog, type LauncherOption, type ProviderInfo, type ProviderModelOption, type UpdateProgress, type CameraDeviceInfo } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear, svg } from "../views/dom";
 import { ICONS } from "../views/icons";
@@ -1532,6 +1532,92 @@ function appIntegrationsSection() {
   return section;
 }
 
+function webcamSection(): HTMLElement {
+  const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
+  const section = h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "📷 Kamera & Webcam" })),
+    body,
+  );
+
+  const deviceList = h("div", { style: "display:flex;flex-direction:column;gap:6px" });
+  const previewBox = h("div", {
+    style: "display:none;margin-top:10px;padding:10px;background:rgba(0,0,0,0.4);border-radius:10px;border:1px solid var(--hairline);",
+  });
+  const previewImg = h("img", {
+    style: "max-width:100%;max-height:220px;border-radius:8px;object-fit:contain;display:block;margin:0 auto;",
+  });
+  const previewInfo = h("div", { class: "hint", style: "margin-top:6px;text-align:center;" });
+  previewBox.append(previewImg, previewInfo);
+
+  const statusText = h("div", { class: "hint" });
+  const captureBtn = h("button", {
+    class: "primary",
+    text: "Ambil Foto Uji Coba",
+    onclick: async () => {
+      captureBtn.setAttribute("disabled", "true");
+      statusText.textContent = "Mengakses sensor kamera...";
+      try {
+        const snap = await Bridge.cameraCapture();
+        if (snap) {
+          previewImg.setAttribute("src", `data:image/jpeg;base64,${snap.base64Image}`);
+          previewInfo.textContent = `Tersimpan: ${snap.filePath} (${Math.round(snap.sizeBytes / 1024)} KB) • ${snap.timestamp}`;
+          previewBox.style.display = "block";
+          statusText.textContent = "Foto berhasil diambil. Sensor kamera telah dinonaktifkan kembali.";
+        }
+      } catch (err) {
+        statusText.textContent = `❌ ${err}`;
+      } finally {
+        captureBtn.removeAttribute("disabled");
+      }
+    },
+  });
+
+  const refreshBtn = h("button", {
+    text: "Pindai Kamera",
+    onclick: () => void loadCameras(),
+  });
+
+  async function loadCameras() {
+    clear(deviceList);
+    deviceList.append(h("div", { class: "hint", text: "Memeriksa perangkat kamera terhubung..." }));
+    const cameras = await Bridge.cameraList();
+    clear(deviceList);
+    if (!cameras || cameras.length === 0) {
+      deviceList.append(h("div", { class: "hint", text: "Tidak ditemukan kamera atau webcam pada komputer ini." }));
+      return;
+    }
+    const webcams = cameras.filter((c: CameraDeviceInfo) => c.isWebcam);
+    const displayList = webcams.length > 0 ? webcams : cameras;
+    for (const cam of displayList) {
+      deviceList.append(
+        h(
+          "div",
+          { class: "row", style: "gap:8px" },
+          statusDot(cam.status.toLowerCase() === "ok"),
+          h("b", { text: cam.name, style: "font-size:12px;" }),
+          h("span", { class: "hint", text: cam.isWebcam ? "Webcam Siap" : "Image Device" }),
+        ),
+      );
+    }
+  }
+
+  body.append(
+    h("div", {
+      class: "hint",
+      text: "Integrasi sensor visual untuk analisis multimodal AI (Vision VLM). Sensor kamera hanya menyala sesaat ketika memotret dan langsung dimatikan (0% CPU idle, privacy protected).",
+    }),
+    deviceList,
+    h("div", { class: "row", style: "gap:8px;margin-top:6px;" }, captureBtn, refreshBtn),
+    statusText,
+    previewBox,
+  );
+
+  void loadCameras();
+  return section;
+}
+
 interface SettingsTab {
   id: string;
   label: string;
@@ -1704,6 +1790,7 @@ async function main() {
       sections: [
         securitySection(),
         sentinelSection(),
+        webcamSection(),
       ],
     },
     {

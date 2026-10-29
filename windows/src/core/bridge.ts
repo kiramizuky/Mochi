@@ -1,3 +1,31 @@
+export interface CameraDeviceInfo {
+  name: string;
+  deviceId: string;
+  status: string;
+  isWebcam: boolean;
+}
+
+export interface CameraSnapshot {
+  filePath: string;
+  sizeBytes: number;
+  base64Image: string;
+  timestamp: string;
+  summaryMarkdown: string;
+}
+
+export interface SystemMetricsReport {
+  cpuPercent: number;
+  ramUsedGb: number;
+  ramTotalGb: number;
+  ramPercent: number;
+  diskUsedGb: number;
+  diskTotalGb: number;
+  diskPercent: number;
+  batteryStatus: string;
+  uptime: string;
+  summaryMarkdown: string;
+}
+
 // Thin wrapper over the Tauri commands/events. Every call is a no-op when the
 // page is opened in a plain browser, so the island can be iterated on with
 // `npm run dev` alone.
@@ -174,6 +202,9 @@ export const Bridge = {
   appsDockerStatus: () => call<DockerIntegrationStatus>("apps_docker_status"),
   appsDockerAction: (action: string, containerId: string) =>
     callOrThrow<string>("apps_docker_action", { action, containerId }),
+  appsSystemStatus: () => call<SystemMetricsReport>("apps_system_status"),
+  cameraList: () => call<CameraDeviceInfo[]>("camera_list"),
+  cameraCapture: () => callOrThrow<CameraSnapshot>("camera_capture"),
 };
 
 export interface IntegrationUpdate {

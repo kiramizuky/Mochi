@@ -17,6 +17,7 @@ mod security;
 mod sentinel;
 mod settings;
 mod smoke;
+mod camera;
 mod tray;
 mod updates;
 mod win_user;
@@ -683,6 +684,32 @@ fn apps_docker_action(action: String, container_id: String) -> Result<String, St
     Ok(res)
 }
 
+
+#[tauri::command]
+fn apps_system_status() -> app_integrations::SystemMetricsReport {
+    app_integrations::inspect_system_metrics()
+}
+
+#[tauri::command]
+fn camera_list() -> Vec<camera::CameraDeviceInfo> {
+    camera::list_cameras()
+}
+
+#[tauri::command]
+fn camera_capture() -> Result<camera::CameraSnapshot, String> {
+    let res = camera::capture_photo()?;
+    security::record_audit(
+        "camera.capture",
+        Some("camera.read"),
+        None,
+        Some(&res.file_path),
+        "allow",
+        "user_action",
+        "success",
+    );
+    Ok(res)
+}
+
 pub fn run() {
     // Before anything else can panic, so a crash leaves a local report.
     crash::install();
@@ -769,6 +796,9 @@ pub fn run() {
             apps_git_status,
             apps_docker_status,
             apps_docker_action,
+            apps_system_status,
+            camera_list,
+            camera_capture,
         ])
         .setup(move |app| {
             security::init_killswitch();

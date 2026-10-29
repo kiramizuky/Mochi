@@ -340,6 +340,8 @@ Untuk setiap fitur, definisikan:
 | Policy/audit/consent/kill switch | Ada (Fondasi 5.0 selesai) | Siap menjadi gerbang otorisasi untuk konsumen Phase 5 berikutnya (MCP, watcher, dll.). |
 | Network Sentinel & Security Audit | Ada (Paket 5 Blueprint) | Audit Windows Defender, Firewall, BitLocker, UAC, port listening, LAN discovery, dan diagnostik latensi/DNS. |
 | Memory (JARVIS Long-Term Memory) | Ada (Phase 5) | Penyimpanan fakta pengguna terdesentralisasi di `%APPDATA%\Mochi\memory.json`, disuntikkan ke AI prompt. |
+| Webcam & Persepsi Visual | Ada (Paket 6 & 7) | Modul `camera.rs` berbasis Windows MediaCapture API: deteksi webcam, penangkapan frame instan (<1s), proteksi privasi hardware (sensor dilepas seketika), kartu preview di Settings, dan integrasi Multimodal Vision VLM di chat. |
+| Diagnostik Sistem PC | Ada (Paket 5/Status) | Monitoring performa real-time Windows (Beban CPU, RAM, Disk C:, status baterai, dan uptime) dengan visual progress bar. |
 | Voice | Belum ada | RFC dan implementasi lintas API Windows. |
 | MCP, autonomous tools | Belum ada | Port bertahap setelah policy/audit tersedia. |
 | Screen/app automation | Belum ada | Implementasi terakhir, dengan consent dan kill switch. |

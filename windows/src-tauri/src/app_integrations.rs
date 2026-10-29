@@ -508,6 +508,131 @@ pub fn manage_docker_container(action: &str, container_id: &str) -> Result<Strin
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemMetricsReport {
+    pub cpu_percent: u32,
+    pub ram_used_gb: f64,
+    pub ram_total_gb: f64,
+    pub ram_percent: u32,
+    pub disk_used_gb: f64,
+    pub disk_total_gb: f64,
+    pub disk_percent: u32,
+    pub battery_status: String,
+    pub uptime: String,
+    pub summary_markdown: String,
+}
+
+fn progress_bar(percent: u32) -> String {
+    let filled = ((percent.min(100) + 5) / 10) as usize;
+    let empty = 10usize.saturating_sub(filled);
+    format!("[{}{}] {}%", "■".repeat(filled), "□".repeat(empty), percent)
+}
+
+/// Gathers live system metrics: CPU, RAM, Disk C, Battery, and Uptime.
+pub fn inspect_system_metrics() -> SystemMetricsReport {
+    let script = r#"
+        $cpu = [math]::Round(((Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average))
+        $os = Get-CimInstance Win32_OperatingSystem
+        $totalRam = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
+        $freeRam = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
+        $usedRam = [math]::Round($totalRam - $freeRam, 1)
+        $ramPct = [math]::Round(($usedRam / $totalRam) * 100)
+        $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+        $totalDisk = [math]::Round($disk.Size / 1GB, 1)
+        $freeDisk = [math]::Round($disk.FreeSpace / 1GB, 1)
+        $usedDisk = [math]::Round($totalDisk - $freeDisk, 1)
+        $diskPct = [math]::Round(($usedDisk / $totalDisk) * 100)
+        $batt = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue
+        $battStatus = if ($batt) { "$($batt.EstimatedChargeRemaining)%" } else { "Desktop / AC Power" }
+        $uptime = (Get-Date) - $os.LastBootUpTime
+
+        [PSCustomObject]@{
+            cpuPercent = [int]$cpu
+            ramUsedGb = [double]$usedRam
+            ramTotalGb = [double]$totalRam
+            ramPercent = [int]$ramPct
+            diskUsedGb = [double]$usedDisk
+            diskTotalGb = [double]$totalDisk
+            diskPercent = [int]$diskPct
+            batteryStatus = $battStatus
+            uptime = "$($uptime.Days)d $($uptime.Hours)h $($uptime.Minutes)m"
+        } | ConvertTo-Json -Compress
+    "#;
+
+    let mut cmd = Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RawMetrics {
+        cpu_percent: u32,
+        ram_used_gb: f64,
+        ram_total_gb: f64,
+        ram_percent: u32,
+        disk_used_gb: f64,
+        disk_total_gb: f64,
+        disk_percent: u32,
+        battery_status: String,
+        uptime: String,
+    }
+
+    let raw: RawMetrics = match cmd.output() {
+        Ok(out) if out.status.success() => {
+            let trimmed = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            serde_json::from_str(&trimmed).unwrap_or(RawMetrics {
+                cpu_percent: 0,
+                ram_used_gb: 0.0,
+                ram_total_gb: 0.0,
+                ram_percent: 0,
+                disk_used_gb: 0.0,
+                disk_total_gb: 0.0,
+                disk_percent: 0,
+                battery_status: "Unknown".into(),
+                uptime: "-".into(),
+            })
+        }
+        _ => RawMetrics {
+            cpu_percent: 0,
+            ram_used_gb: 0.0,
+            ram_total_gb: 0.0,
+            ram_percent: 0,
+            disk_used_gb: 0.0,
+            disk_total_gb: 0.0,
+            disk_percent: 0,
+            battery_status: "Unknown".into(),
+            uptime: "-".into(),
+        },
+    };
+
+    let cpu_bar = progress_bar(raw.cpu_percent);
+    let ram_bar = progress_bar(raw.ram_percent);
+    let disk_bar = progress_bar(raw.disk_percent);
+
+    let md = format!(
+        "### Status Kesehatan Sistem Windows\n        • **Beban CPU:** {cpu_bar}\n        • **Memori RAM:** `{:.1} / {:.1} GB` {ram_bar}\n        • **Penyimpanan (C:):** `{:.1} / {:.1} GB` {disk_bar}\n        • **Daya / Baterai:** {}\n        • **Uptime:** {}\n",
+        raw.ram_used_gb, raw.ram_total_gb,
+        raw.disk_used_gb, raw.disk_total_gb,
+        raw.battery_status,
+        raw.uptime
+    );
+
+    SystemMetricsReport {
+        cpu_percent: raw.cpu_percent,
+        ram_used_gb: raw.ram_used_gb,
+        ram_total_gb: raw.ram_total_gb,
+        ram_percent: raw.ram_percent,
+        disk_used_gb: raw.disk_used_gb,
+        disk_total_gb: raw.disk_total_gb,
+        disk_percent: raw.disk_percent,
+        battery_status: raw.battery_status,
+        uptime: raw.uptime,
+        summary_markdown: md,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

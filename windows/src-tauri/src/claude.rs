@@ -44,6 +44,13 @@ impl Chat {
         self.messages.lock().unwrap().pop();
     }
 
+    fn attach_to_last(&self, attachment: Attachment) {
+        let mut msgs = self.messages.lock().unwrap();
+        if let Some(last) = msgs.last_mut() {
+            last.attachments.push(attachment);
+        }
+    }
+
     fn snapshot(&self) -> Vec<Turn> {
         self.messages.lock().unwrap().clone()
     }
@@ -170,6 +177,72 @@ pub async fn send(
     }
 
     // ── Desktop Applications & Server Integrations Direct Actions ────────────
+
+        // System Diagnostics / Status
+    if q_lower == "/status"
+        || q_lower.contains("status pc")
+        || q_lower.contains("status laptop")
+        || q_lower.contains("status sistem")
+        || q_lower.contains("cek status pc")
+        || q_lower.contains("kesehatan laptop")
+        || q_lower.contains("system status")
+    {
+        let report = crate::app_integrations::inspect_system_metrics();
+        let reply = report.summary_markdown;
+        chat.push(Turn {
+            role: "assistant",
+            text: reply.clone(),
+            attachments: Vec::new(),
+        });
+        return Ok(ChatReply { text: reply });
+    }
+
+    // Webcam & Camera Snapshot
+    if q_lower.contains("ambil foto webcam")
+        || q_lower.contains("foto webcam")
+        || q_lower.contains("foto kamera")
+        || q_lower.contains("capture webcam")
+        || q_lower.contains("ambil foto saya")
+        || q_lower.contains("webcam photo")
+        || q_lower.contains("lihat depan kamera")
+        || q_lower.contains("kamera laptop")
+    {
+        match crate::camera::capture_photo() {
+            Ok(snap) => {
+                let want_analysis = q_lower.contains("analisis")
+                    || q_lower.contains("lihat")
+                    || q_lower.contains("apa yang ada")
+                    || q_lower.contains("deskripsikan")
+                    || q_lower.contains("explain")
+                    || q_lower.contains("describe");
+
+                if want_analysis {
+                    // Inject photo attachment into the user's turn for Multimodal VLM
+                    chat.attach_to_last(Attachment::Image {
+                        media_type: "image/jpeg".into(),
+                        data: snap.base64_image.clone(),
+                    });
+                } else {
+                    let reply = snap.summary_markdown;
+                    chat.push(Turn {
+                        role: "assistant",
+                        text: reply.clone(),
+                        attachments: Vec::new(),
+                    });
+                    return Ok(ChatReply { text: reply });
+                }
+            }
+            Err(err) => {
+                let reply = format!("❌ Gagal mengakses webcam: {}", err);
+                chat.push(Turn {
+                    role: "assistant",
+                    text: reply.clone(),
+                    attachments: Vec::new(),
+                });
+                return Ok(ChatReply { text: reply });
+            }
+        }
+    }
 
     // Running Apps listing
     if q_lower.contains("aplikasi apa saja")
